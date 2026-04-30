@@ -1,0 +1,128 @@
+---
+title: "How the Leave Request Approval Workflow Works in Practice"
+description: "Trace each request status from Draft through manager and HR approval to final Approved or Rejected — including who acts at each step and what triggers emails."
+---
+
+Every request in Control de Vacaciones — whether for vacation days, paid time off, or compensation — follows the same six-state approval chain. Understanding this workflow helps employees know what to expect after they submit, and helps managers and HR administrators know when it is their turn to act. This page traces each status transition from first draft to final decision, identifies who is responsible at every step, and explains how the audit log captures each change.
+
+## Status overview
+
+The `RequestStatus` enum in `app/States/RequestStatus.php` defines all six possible states. Every request starts as `Draft` and can only reach `Approved` after both a manager and an HR administrator act on it.
+
+| Status | Value | Meaning |
+|--------|-------|---------|
+| **Draft** | `draft` | Saved but not yet submitted — only visible to the creating employee |
+| **Pending** | `pending` | Submitted and waiting for manager review |
+| **Approved by manager** | `approved_by_manager` | Manager approved; waiting for HR final approval |
+| **Approved by RRHH** | `approved_by_rrhh` | Admin approved a Pending request directly (unusual path); awaiting manager |
+| **Approved** | `approved` | Both parties approved — request is fully authorised |
+| **Rejected** | `rejected` | Rejected at any stage; a mandatory comment records the reason |
+
+## Workflow lifecycle
+
+<Steps>
+  <Step title="Employee creates a draft">
+    The employee opens a new request, fills in the required fields, and clicks **Guardar como Borrador**. The status is set to `Draft`. The request is private — managers and HR cannot see draft requests they did not create themselves.
+  </Step>
+  <Step title="Employee submits the request">
+    When the employee is ready, they click **Enviar Solicitud**. The status moves to `Pending` and the system sends an email notification to the department manager. An in-app notification also appears in the manager's panel.
+  </Step>
+  <Step title="Manager reviews the request">
+    The manager opens the request from **Solicitudes** in the sidebar. The **Aprobar Solicitud** button is enabled only when the status is `Pending`.
+
+    - If the manager approves, the status moves to `ApprovedByManager` and an email is sent to all admin (RRHH) users.
+    - If the manager rejects, the status moves to `Rejected`. A modal prompts the manager for a mandatory rejection comment, which is stored in `commentsAdditional`.
+  </Step>
+  <Step title="HR administrator gives final approval">
+    An admin (RRHH) user opens the request from their panel. The **Aprobar Solicitud** button is enabled only when the status is `ApprovedByManager`.
+
+    - If the admin approves, the status moves to `Approved` and an email and in-app notification are sent to the employee.
+    - If the admin rejects, the status moves to `Rejected` and the employee receives a rejection notification.
+  </Step>
+  <Step title="Employee is notified of the outcome">
+    The employee receives an email and an in-app notification as soon as the request reaches either `Approved` or `Rejected`. Approved requests are locked — no further edits are possible. Rejected requests are also locked; the employee must create a new request if they want to try again.
+  </Step>
+</Steps>
+
+## Role responsibilities at each stage
+
+| Stage | Who acts | Action available |
+|-------|----------|-----------------|
+| `Draft` → `Pending` | Employee | Click **Enviar Solicitud** |
+| `Pending` → `ApprovedByManager` | Manager | Click **Aprobar Solicitud** |
+| `Pending` → `ApprovedByRRHH` | Admin (RRHH) | Click **Aprobar Solicitud** (when manager has not yet acted) |
+| `Pending` → `Rejected` | Manager or Admin (RRHH) | Click **Rechazar Solicitud** + add comment |
+| `ApprovedByManager` → `Approved` | Admin (RRHH) | Click **Aprobar Solicitud** |
+| `ApprovedByManager` → `Rejected` | Admin (RRHH) | Click **Rechazar Solicitud** + add comment |
+
+<Note>
+  The **Aprobar Solicitud** button is disabled when the request is not in the correct state for the authenticated role. A manager cannot approve a request that is still `Draft`, and an admin cannot approve a request that has not yet been approved by the manager.
+</Note>
+
+## What happens on rejection
+
+When any reviewer clicks **Rechazar Solicitud**, a confirmation modal requires them to enter a comment explaining the reason. The modal will not submit without it. Once confirmed:
+
+1. The status is set to `Rejected`.
+2. The comment is saved in `commentsAdditional` with `type_comment = 'rejection'`.
+3. The employee receives an email (`RejectedRequest` / `RejectedPaidRequest` / `RejectedCompensationRequest`) and an in-app notification.
+4. The request is locked — neither the employee nor any reviewer can edit it.
+
+<Warning>
+  A rejected request cannot be reopened or reset to `Draft`. If an employee needs to resubmit, they must create a brand-new request.
+</Warning>
+
+## Editing restrictions by status
+
+Requests can only be edited through form fields while they are in `Draft` status. The form disables the core date and comment fields as soon as the request leaves `Draft`. The edit page enforces an additional guard in `beforeFill()` that shows a notification and prevents changes if the record is in a terminal or in-review state.
+
+| Status | Employee can edit | Manager can act | Admin can act |
+|--------|-------------------|-----------------|---------------|
+| `Draft` | Yes | No | No |
+| `Pending` | No | Yes (approve/reject) | Yes (approve → `ApprovedByRRHH`) |
+| `ApprovedByManager` | No | No | Yes (approve/reject) |
+| `ApprovedByRRHH` | No | No | No |
+| `Approved` | No | No | No |
+| `Rejected` | No | No | No |
+
+## Audit log
+
+Every status transition is recorded automatically by the `HasRequestLogs` trait (`app/Traits/HasRequestLogs.php`). The trait hooks into Eloquent's `created` and `updated` events:
+
+- On **create**: logs the initial status and the comment `"Solicitud creada"`.
+- On **update**: if the `status` column changed, logs the new status with a plain-language comment in Spanish.
+
+```php
+// app/Traits/HasRequestLogs.php — comment per status transition
+$comment = match ($status) {
+    RequestStatus::Draft           => 'Guardado como borrador',
+    RequestStatus::Pending         => 'Solicitud enviada',
+    RequestStatus::ApprovedByManager => 'Aprobado por jefe',
+    RequestStatus::ApprovedByRRHH  => 'Aprobado por RRHH',
+    RequestStatus::Approved        => 'Solicitud aprobada',
+    RequestStatus::Rejected        => 'Solicitud rechazada',
+};
+```
+
+Each log entry stores the `user_id` of the person who triggered the change, the new `status` value, and the generated comment. You can view the full history in the collapsible **Historial de Cambios** section at the bottom of every request edit page.
+
+<Tip>
+  The audit log is polymorphic — the same `request_logs` table and `HasRequestLogs` trait are shared by vacation requests, paid requests, and compensation requests. Every request type gets a complete, consistent change history automatically.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Email notifications" icon="envelope" href="/guides/email-notifications">
+    See which emails are sent at each status transition and how to configure your mail driver.
+  </Card>
+  <Card title="Vacation requests" icon="calendar-days" href="/features/vacation-requests">
+    Learn the form fields, business-day calculation, and list view for vacation requests.
+  </Card>
+  <Card title="Paid requests" icon="banknotes" href="/features/paid-requests">
+    Understand paid time off requests and their approval flow.
+  </Card>
+  <Card title="Compensation requests" icon="clock-rotate-left" href="/features/compensation-requests">
+    See how extra days worked are converted into compensatory leave.
+  </Card>
+</CardGroup>

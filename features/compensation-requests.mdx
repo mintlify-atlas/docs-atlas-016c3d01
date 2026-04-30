@@ -1,0 +1,271 @@
+---
+title: "Compensation Requests: Track and Approve Extra Days Worked"
+description: "Learn how to submit compensation requests for extra days worked, what each field tracks, how approvals progress, and which roles can view records."
+---
+
+A compensation request (*Solicitud de Compensación*) records days that an employee worked beyond their normal schedule and that the organisation owes back as time off. Instead of paying for the extra work, the employee earns compensatory leave — tracked as `accrued_compensation` — which they can later use as vacation days. This page describes every form field in `RequestForCompensationForm.php`, the business-day counting logic, the full status lifecycle, and the role-based rules that control record visibility.
+
+## Navigating to compensation requests
+
+Compensation requests are found under **Solicitudes → Solicitudes por Compensación** in the sidebar (navigation sort order 5). The resource is defined in `app/Filament/Resources/RequestForCompensation/RequestForCompensationResource.php` and stores records in the `request_for_compensation` database table.
+
+## Creating a compensation request
+
+<Steps>
+  <Step title="Open the create form">
+    Click the green **Nueva Solicitud de Compensación** button (outlined `document-duplicate` icon) at the top right of the list page.
+  </Step>
+  <Step title="Review pre-filled employee and date">
+    The **Empleado Solicitante** field is pre-set to the authenticated user's employee record and is disabled. The **Fecha de Creacion** (`date_creation`) field defaults to `now()` and is read-only.
+  </Step>
+  <Step title="Enter days to compensate">
+    Fill in **Dias a Compensar** (`days_to_compensate`). This represents the number of business days worked that need to be given back as leave. Entering this value automatically populates both `accrued_compensation` and `total_compensation`.
+  </Step>
+  <Step title="Select the date range">
+    Choose **Fecha de Inicio** and **Fecha Final** in the *Fechas de Dias a Compensar* sub-section. The form calculates the business days between those dates and stores the result in `total_days`.
+  </Step>
+  <Step title="Review balance fields">
+    The read-only **Balance de Vacaciones (Total de Vacaciones)** field shows the current vacation balance for the employee. The *Balance de Compensacion* sub-section shows `accrued_compensation`, `used`, and `total_compensation`.
+  </Step>
+  <Step title="Add a reason">
+    Fill in the **Descripcion** textarea under *Motivo por el Cual pide Compensacion* to document why compensation is being requested.
+  </Step>
+  <Step title="Save or submit">
+    Use the header action buttons to save as draft or send the request into the approval workflow.
+  </Step>
+</Steps>
+
+## Form fields reference
+
+### Request information section
+
+| Field | Label | Type | Notes |
+|---|---|---|---|
+| `employee_id` | Empleado Solicitante | Select (relationship) | Pre-set to authenticated user's employee; disabled and dehydrated |
+| `date_creation` | Fecha de Creacion | DateTimePicker | Read-only; defaults to `now()` |
+| `status` | Estado de la Solicitud | Select (enum) | Defaults to `Draft`; disabled — managed by header action buttons only |
+| `approval_date` | Fecha de Aprobacion | DatePicker | Disabled and dehydrated; auto-set by `afterStateUpdated` when status becomes `Approved` |
+| `days_to_compensate` | Dias a Compensar | TextInput (numeric) | Required; minimum 0; helper: "Recuerda que son dias habiles"; triggers auto-fill of `accrued_compensation` and `total_compensation` |
+| `start_date` | Fecha de Inicio | DatePicker | Required; triggers `total_days` recalculation |
+| `end_date` | Fecha Final | DatePicker | Required; triggers `total_days` recalculation |
+| `total_days` | Dias Totales | TextInput (numeric) | Required; auto-calculated from the date range; helper: "Recuerda que son dias habiles" |
+
+### Balance section
+
+| Field | Label | Type | Notes |
+|---|---|---|---|
+| `balance` | Balance de Vacaciones (Total de Vacaciones) | TextInput | Read-only; pulled live from `BalanceVacation` for the selected employee |
+| `accrued_compensation` | Acumulado | TextInput | Auto-filled from `days_to_compensate`; defaults to 0 |
+| `used` | Usado | TextInput | Editable; defaults to 0 |
+| `total_compensation` | Compensacion | TextInput | Auto-filled from `days_to_compensate`; defaults to 0 |
+| `comment` | Descripcion | Textarea | Optional; max 255 characters |
+
+### Auto-fill when entering days to compensate
+
+When you enter a value in `days_to_compensate`, both `accrued_compensation` and `total_compensation` are immediately set to the same number:
+
+```php
+// RequestForCompensationForm.php — afterStateUpdated on days_to_compensate
+->afterStateUpdated(function ($state, callable $set) {
+    $set('accrued_compensation', $state);
+    $set('total_compensation', $state);
+})
+```
+
+### Approval date auto-set
+
+When `status` transitions to `Approved`, `approval_date` is automatically filled with the current timestamp:
+
+```php
+// RequestForCompensationForm.php — afterStateUpdated on status
+->afterStateUpdated(function ($state, callable $set, callable $get) {
+    if ($state === RequestStatus::Approved) {
+        $set('approval_date', now());
+    }
+})
+```
+
+### Fields locked by status
+
+The following fields become **disabled** once the request reaches `pending`, `approved`, `rejected`, or `approved_by_manager`:
+
+- `days_to_compensate`
+- `start_date`
+- `end_date`
+- `total_days`
+- `comment`
+
+```php
+// RequestForCompensationForm.php — disabled condition
+->disabled(fn($get) => in_array($get('status'), [
+    RequestStatus::Approved,
+    RequestStatus::Rejected,
+    RequestStatus::Pending,
+    RequestStatus::ApprovedByManager
+]))
+```
+
+<Note>
+`employee_id`, `date_creation`, `status`, and `approval_date` are always read-only or disabled. The system manages their values programmatically.
+</Note>
+
+## Business-day calculation
+
+When either `start_date` or `end_date` changes, the form iterates every calendar day between them using Carbon and skips any day where `isWeekend()` is `true`. The result populates `total_days`.
+
+```php
+// RequestForCompensationForm.php — afterStateUpdated on start_date / end_date
+$diasHabiles = 0;
+$inicio = Carbon::parse($fechaInicio);
+$fin = Carbon::parse($fechaFin);
+
+while ($inicio->lte($fin)) {
+    if (!$inicio->isWeekend()) {
+        $diasHabiles++;
+    }
+    $inicio->addDay();
+}
+
+$set('total_days', $diasHabiles);
+```
+
+<Warning>
+Public holidays are not subtracted automatically. Only Saturdays and Sundays are excluded. Reconcile any additional non-working days manually before submitting.
+</Warning>
+
+## Status lifecycle
+
+Compensation requests use the shared `RequestStatus` enum from `app/States/RequestStatus.php`:
+
+| Enum case | Value | Label | Badge colour |
+|---|---|---|---|
+| `Draft` | `draft` | Borrador | gray |
+| `Pending` | `pending` | Pendiente | primary (amber) |
+| `ApprovedByManager` | `approved_by_manager` | Aprobadas por el Jefe | info |
+| `ApprovedByRRHH` | `approved_by_rrhh` | Aprobadas por RRHH | info |
+| `Approved` | `approved` | Aprobadas | success |
+| `Rejected` | `rejected` | Rechazadas | danger |
+
+The approval path mirrors the other request types: manager approves first, then admin (RRHH) grants final approval.
+
+<Tabs>
+  <Tab title="Employee">
+    Creates in `Draft`, submits to move to `Pending`. Can edit and delete their own requests while in `Draft`. The Edit and Delete row actions are hidden once the request reaches `Pending`, `Approved`, or `Rejected`.
+  </Tab>
+  <Tab title="Manager">
+    Sees all non-draft requests from their department plus their own requests (all statuses). Approves `Pending` requests (→ `ApprovedByManager`) or rejects them with a required rejection comment.
+  </Tab>
+  <Tab title="Admin (RRHH)">
+    Sees all non-draft records plus their own drafts. Approves `ApprovedByManager` requests (→ `Approved`) or rejects them. The `approval_date` field is set automatically on approval.
+  </Tab>
+</Tabs>
+
+## List tabs
+
+The list page (`ListRequestForCompensation.php`) provides six filter tabs, all scoped with `visibleFor`:
+
+| Tab key | Label | Badge colour |
+|---|---|---|
+| `all` | Todas | — |
+| `draft` | Borrador | gray |
+| `pending` | Pendientes | primary |
+| `approved` | Aprobadas | success |
+| `approved_by_manager` | Aprobadas por Jefe | send (cyan) |
+| `rejected` | Rechazadas | danger |
+
+## Change history
+
+The form always shows a collapsible **Historial de Cambios** section at the bottom (clock icon). It renders the `filament.components.request-logs` view using polymorphic `RequestLog` records attached via the `HasRequestLogs` trait. Each log entry shows who made the change and when.
+
+## Table columns
+
+The compensation requests table shows the following columns:
+
+| Column | Label | Notes |
+|---|---|---|
+| `employee.full_name` | Empleado Solicitante | Searchable by first and last name |
+| `date_creation` | Fecha de Creacion | Formatted as datetime; sortable |
+| `status` | Estado de la Solicitud | Badge with enum label, colour, and icon |
+| `approval_date` | Fecha de Aprobacion | Formatted as datetime; sortable |
+| `days_to_compensate` | Dias a Compensar | Numeric; sortable |
+| `start_date` | Fecha de Inicio | Date; sortable |
+| `end_date` | Fecha Final | Date; sortable |
+| `total_days` | Dias Totales | Numeric; sortable |
+| `accrued_compensation` | Acumulado | Numeric; sortable |
+| `used` | Dias Usados | Numeric; sortable |
+| `total_compensation` | Dias de Compensacion | Numeric; sortable |
+| `comment` | Descripcion | Truncated to 10 chars; full text on tooltip |
+| `rejection_comment` | Motivo de Rechazo | Hidden by default; from `commentsAdditional` with type `rejection` |
+
+A **Filtrar por Estado** dropdown lets you filter by any `RequestStatus` value.
+
+## Role visibility rules
+
+The `scopeVisibleFor` method on `RequestForCompensation` (`app/Models/RequestForCompensation.php:60`) applies the same three-tier rules used across all request models:
+
+<Tabs>
+  <Tab title="Admin">
+    Sees **all** compensation requests. The table query additionally shows all non-draft records plus the admin's own drafts.
+  </Tab>
+  <Tab title="Manager">
+    Sees their own requests (all statuses) plus all non-draft requests from employees sharing the same `department_id`.
+
+    ```php
+    // RequestForCompensation::scopeVisibleFor
+    $employeeIds = Employee::where('department_id', $employee->department_id)
+        ->pluck('id')
+        ->push($employee->id);
+
+    return $query->whereIn('employee_id', $employeeIds);
+    ```
+  </Tab>
+  <Tab title="Employee">
+    Sees only their own compensation requests.
+
+    ```php
+    // RequestForCompensation::scopeVisibleFor
+    return $query->where('employee_id', $employee->id);
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+A user with no linked employee record sees no records at all (`whereRaw('1 = 0')`).
+</Note>
+
+## Database schema
+
+The `request_for_compensation` table is created by `2026_03_09_214303_create_request_for_compensation_table.php`:
+
+```php
+$table->id();
+$table->foreignId('employee_id');
+$table->dateTime('date_creation')->nullable();
+$table->integer('total_days')->nullable();
+$table->string('status')->nullable();
+$table->date('approval_date')->nullable();
+$table->date('start_date')->nullable();
+$table->date('end_date')->nullable();
+$table->text('comment')->nullable();
+$table->integer('days_to_compensate')->nullable();
+$table->integer('accrued_compensation')->nullable();
+$table->integer('used')->nullable();
+$table->integer('total_compensation')->nullable();
+$table->softDeletes();
+$table->timestamps();
+```
+
+<CardGroup cols={2}>
+  <Card title="Vacation Requests" icon="calendar-date-range" href="/features/vacation-requests">
+    Submit standard time-off requests with automatic business-day calculation.
+  </Card>
+  <Card title="Paid Requests" icon="banknotes" href="/features/paid-requests">
+    Request cash compensation for unused vacation days.
+  </Card>
+  <Card title="Vacation Balance" icon="clipboard-document-list" href="/features/vacation-balance">
+    View how accrued, used, and pending days combine into an employee's balance.
+  </Card>
+  <Card title="Dashboard" icon="chart-bar" href="/features/dashboard">
+    See live compensation request counts broken down by status.
+  </Card>
+</CardGroup>

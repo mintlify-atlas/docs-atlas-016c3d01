@@ -1,0 +1,192 @@
+---
+title: "Configuring Control de Vacaciones Environment Variables"
+description: "A focused reference for the .env variables you need to set before running Control de Vacaciones: app, database, mail, queue, session, and Redis settings."
+---
+
+All runtime configuration for Control de Vacaciones lives in the `.env` file at the project root. The repository ships with `.env.example` as a safe starting point — copy it to `.env` and update the values described on this page before you start the application. You do not need to touch any PHP configuration files for a standard deployment.
+
+```bash
+cp .env.example .env
+```
+
+## Application settings
+
+These variables control the core Laravel application identity and behaviour.
+
+```bash
+APP_NAME="Control de Vacaciones"
+APP_ENV=production
+APP_KEY=                    # Run: php artisan key:generate
+APP_DEBUG=false
+APP_URL=http://your-domain.com
+```
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `APP_NAME` | `Laravel` | Displayed as the sender name in emails (`MAIL_FROM_NAME`) |
+| `APP_ENV` | `local` | Set to `production` for live deployments |
+| `APP_KEY` | _(empty)_ | Required; generate with `php artisan key:generate` |
+| `APP_DEBUG` | `true` | Set to `false` in production to hide stack traces |
+| `APP_URL` | `http://localhost` | Full URL of the application including scheme and port |
+
+<Warning>
+  Never set `APP_DEBUG=true` in production. Enabling debug mode exposes stack traces, environment variables, and internal configuration to anyone who triggers an error.
+</Warning>
+
+## Database
+
+The default `.env.example` configures SQLite for local development. For production — especially when running under Docker — switch to MySQL and point `DB_HOST` at the database service.
+
+```bash
+DB_CONNECTION=mysql
+DB_HOST=db            # Use 'db' when running under Docker Compose
+DB_PORT=3306
+DB_DATABASE=app
+DB_USERNAME=app
+DB_PASSWORD=secret
+```
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DB_CONNECTION` | `sqlite` | Use `mysql` for production |
+| `DB_HOST` | `127.0.0.1` | Set to `db` when using the Docker Compose stack |
+| `DB_PORT` | `3306` | Default MySQL port |
+| `DB_DATABASE` | `laravel` | Database name — must match `MYSQL_DATABASE` in `docker-compose.yml` |
+| `DB_USERNAME` | `root` | Database user |
+| `DB_PASSWORD` | _(empty)_ | Database password — set a strong value |
+
+<Note>
+  When `DB_CONNECTION=sqlite`, Laravel creates the database file at `database/database.sqlite`. The `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` variables are ignored in SQLite mode.
+</Note>
+
+## Mail
+
+Email notifications are sent at each approval stage. Configure these variables to point at your SMTP provider or transactional email service.
+
+```bash
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_USERNAME=notifications@example.com
+MAIL_PASSWORD=your-smtp-password
+MAIL_FROM_ADDRESS="noreply@example.com"
+MAIL_FROM_NAME="${APP_NAME}"
+```
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `MAIL_MAILER` | `log` | `log` writes to `laravel.log`; use `smtp` or a service driver for real delivery |
+| `MAIL_HOST` | `127.0.0.1` | SMTP server hostname |
+| `MAIL_PORT` | `2525` | Common values: `587` (TLS/STARTTLS), `465` (SSL), `25` (plain) |
+| `MAIL_USERNAME` | `null` | SMTP authentication username |
+| `MAIL_PASSWORD` | `null` | SMTP authentication password |
+| `MAIL_FROM_ADDRESS` | `hello@example.com` | Sender address shown to recipients |
+| `MAIL_FROM_NAME` | `${APP_NAME}` | Sender display name; defaults to `APP_NAME` |
+
+<Tip>
+  During local development, leave `MAIL_MAILER=log` and inspect sent emails in `storage/logs/laravel.log`. You can also use [Mailpit](https://github.com/axllent/mailpit) or [Mailtrap](https://mailtrap.io) as a local SMTP trap to preview rendered emails in a browser UI.
+</Tip>
+
+## Queue
+
+Emails are processed asynchronously by the queue worker. Choose a queue backend that fits your environment.
+
+```bash
+QUEUE_CONNECTION=redis    # Use 'database' if you are not running Redis
+```
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `QUEUE_CONNECTION` | `database` | `database` stores jobs in MySQL; `redis` is faster and recommended for production |
+
+When `QUEUE_CONNECTION=database`, Laravel stores queued jobs in the `jobs` table. When set to `redis`, jobs are stored in Redis and the `REDIS_*` variables must also be configured.
+
+<Note>
+  The Docker Compose stack includes a dedicated `queue` service that runs `php artisan queue:work` automatically. If you deploy without Docker, you must start the queue worker manually or configure a process supervisor such as Supervisor to keep it running.
+</Note>
+
+## Session
+
+```bash
+SESSION_DRIVER=database
+SESSION_LIFETIME=120
+```
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `SESSION_DRIVER` | `database` | Where sessions are stored: `database`, `redis`, `file`, or `cookie` |
+| `SESSION_LIFETIME` | `120` | Session expiry in minutes of inactivity |
+
+For production deployments using Redis, switching `SESSION_DRIVER=redis` reduces database load and improves performance.
+
+## Redis
+
+Redis is used as the cache store and queue backend in the Docker Compose stack. If you are not using Redis, you can leave these at their defaults and keep `QUEUE_CONNECTION=database` and `CACHE_STORE=database`.
+
+```bash
+REDIS_CLIENT=phpredis
+REDIS_HOST=redis      # Use 'redis' when running under Docker Compose
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+```
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `REDIS_CLIENT` | `phpredis` | PHP Redis client; `phpredis` (C extension) or `predis` (pure PHP) |
+| `REDIS_HOST` | `127.0.0.1` | Redis server hostname; set to `redis` in the Docker Compose stack |
+| `REDIS_PASSWORD` | `null` | Redis authentication password; `null` disables auth |
+| `REDIS_PORT` | `6379` | Default Redis port |
+
+## Complete example for production
+
+The block below shows a minimal production-ready `.env` combining all the settings above. Replace each placeholder with your real values.
+
+```bash
+APP_NAME="Control de Vacaciones"
+APP_ENV=production
+APP_KEY=base64:REPLACE_WITH_GENERATED_KEY
+APP_DEBUG=false
+APP_URL=https://hr.example.com
+
+DB_CONNECTION=mysql
+DB_HOST=db
+DB_PORT=3306
+DB_DATABASE=app
+DB_USERNAME=app
+DB_PASSWORD=strong-database-password
+
+QUEUE_CONNECTION=redis
+CACHE_STORE=redis
+SESSION_DRIVER=redis
+SESSION_LIFETIME=120
+
+REDIS_CLIENT=phpredis
+REDIS_HOST=redis
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_USERNAME=notifications@example.com
+MAIL_PASSWORD=smtp-password
+MAIL_FROM_ADDRESS="noreply@example.com"
+MAIL_FROM_NAME="Control de Vacaciones"
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Deployment" icon="server" href="/deployment">
+    Run the full Docker Compose stack using these environment variables.
+  </Card>
+  <Card title="Email notifications" icon="envelope" href="/guides/email-notifications">
+    See which emails are sent at each approval stage and how the queue delivers them.
+  </Card>
+  <Card title="Request workflow" icon="arrow-right-arrow-left" href="/guides/request-workflow">
+    Understand the approval chain that drives the email and notification events.
+  </Card>
+  <Card title="Roles and permissions" icon="shield-halved" href="/admin/roles-permissions">
+    Configure user roles and Filament Shield permissions after deployment.
+  </Card>
+</CardGroup>

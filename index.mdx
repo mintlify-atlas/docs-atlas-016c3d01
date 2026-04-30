@@ -1,133 +1,64 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "Control de Vacaciones: HR Leave Management for Your Team"
+description: "Manage vacation requests, paid time off, and compensation requests for your entire organization — with role-based approvals and real-time dashboards."
 ---
 
-## Setting up
+Control de Vacaciones is a web-based HR leave management system built on Laravel and Filament. It gives employees, managers, and HR administrators a single place to submit, review, and approve vacation requests, paid time off, and compensation days — with a full audit trail and email notifications at every step.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Set up your account and submit your first vacation request in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Request Workflow" icon="arrow-right-arrow-left" href="/guides/request-workflow">
+    Understand the full approval flow from Draft to Approved.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Core Features" icon="star" href="/features/vacation-requests">
+    Explore vacation requests, paid time off, compensation days, and balance tracking.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Administration" icon="gear" href="/admin/employees">
+    Manage employees, departments, payroll types, and user permissions.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you can do
 
-Everything you need to create world-class documentation.
+Control de Vacaciones covers the full leave management lifecycle for your organization:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={3}>
+  <Card title="Vacation Requests" icon="calendar" href="/features/vacation-requests">
+    Submit and track vacation days with automatic business-day calculation.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Paid Time Off" icon="money-bill" href="/features/paid-requests">
+    Manage paid vacation pay requests with accrual tracking.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Compensation Days" icon="clock-rotate-left" href="/features/compensation-requests">
+    Track and approve days worked that need to be compensated.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Balance Tracking" icon="scale-balanced" href="/features/vacation-balance">
+    View accrued, used, and remaining vacation balance per employee.
   </Card>
-</Columns>
+  <Card title="Dashboard" icon="chart-bar" href="/features/dashboard">
+    Monitor request status at a glance with role-aware statistics widgets.
+  </Card>
+  <Card title="Email Notifications" icon="envelope" href="/guides/email-notifications">
+    Automatic emails notify employees and managers at every status change.
+  </Card>
+</CardGroup>
 
-## Make your content agent ready
+## Get started in 3 steps
 
-Make your docs work for humans and AI agents alike.
+<Steps>
+  <Step title="Log in to the admin panel">
+    Navigate to `/admin` and sign in with your credentials. Your dashboard shows request statistics relevant to your role.
+  </Step>
+  <Step title="Submit a request">
+    Go to **Solicitudes → Solicitudes de Vacaciones** and click **Nueva Solicitud**. Select your start and end dates — business days are calculated automatically.
+  </Step>
+  <Step title="Track approval progress">
+    Your request moves through the approval workflow: **Draft → Pending → Manager Approval → HR Approval → Approved**. You receive an email at each stage.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Note>
+  Access to features depends on your role. Employees see only their own requests; managers see their department; administrators have full access to all records.
+</Note>

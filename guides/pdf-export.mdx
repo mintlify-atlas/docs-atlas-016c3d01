@@ -1,0 +1,80 @@
+---
+title: "Export Vacation and Leave Requests as Signed PDF Files"
+description: "Learn how to download vacation, paid, and compensation requests as signed PDF files directly from the request detail view using the built-in print action."
+---
+
+Control de Vacaciones lets employees, managers, and administrators download any approved request as a PDF with a single click. The application uses the `barryvdh/laravel-dompdf` package to render the request details — no external service or additional configuration is required. This page explains where the export button appears, which request types support it, and what the generated PDF contains.
+
+## Where the export button appears
+
+The **Imprimir Solicitud** (Print Request) button appears in the header action bar at the top of each request's edit page. It is rendered as a primary-coloured button with a printer icon (`heroicon-o-printer`). The button opens the PDF in a new browser tab.
+
+The button is available on all three request types:
+
+- **Vacation requests** — edit page at `/admin/vacation-requests/{id}/edit`
+- **Paid requests** — edit page at `/admin/paid-requests/{id}/edit`
+- **Compensation requests** — edit page at `/admin/request-for-compensation/{id}/edit`
+
+## Who can export
+
+The **Imprimir Solicitud** button is visible to all three roles — `employee`, `manager`, and `admin` — subject to the request's current status.
+
+| Request type | Button visible when status is |
+|--------------|-------------------------------|
+| Vacation request | `Draft`, `ApprovedByManager`, `ApprovedByRRHH`, or `Approved` |
+| Paid request | `Draft`, `ApprovedByRRHH`, or `Approved` |
+
+<Note>
+  The export button is hidden for requests in `Pending` or `Rejected` status. A pending request is still under review and should not be presented as an official document; a rejected request has no approval to certify.
+</Note>
+
+## Signed URLs
+
+The print button uses a **signed route** (`URL::signedRoute`) rather than a plain URL. This means the PDF link contains a cryptographic signature that Laravel validates before rendering the document. The signature prevents unauthorised users from guessing or modifying request IDs in the URL to access other employees' records.
+
+```php
+// EditVacationRequest.php — print action
+->url(fn($record) => URL::signedRoute('print.vacation', [
+    'id' => $record->id
+]))
+->openUrlInNewTab()
+```
+
+The signed URL is also embedded in email notifications for `PendingRequest` and `ApprovedManagerRequest` emails, so managers and HR can print the document directly from their inbox without logging into the panel.
+
+## PDF generation with DomPDF
+
+PDF rendering is handled by [`barryvdh/laravel-dompdf`](https://github.com/barryvdh/laravel-dompdf) (version `^3.1`), a wrapper around the DOMPDF library. The package converts a Blade view into a PDF using an HTML-to-PDF renderer — no headless browser or additional binary is needed.
+
+DomPDF works out of the box with the default Laravel configuration. You do not need to publish or modify any configuration file unless you want to change paper size, orientation, or font settings.
+
+<Tip>
+  If the PDF contains characters that do not render correctly, ensure that the `storage/fonts` directory is writable by the web server process. DomPDF caches font files there on first use.
+</Tip>
+
+## Print routes
+
+Each request type has its own named print route that maps to a controller action responsible for loading the record, checking the signed URL, and returning the rendered PDF response.
+
+| Request type | Route name | URL path |
+|---|---|---|
+| Vacation | `print.vacation` | `/print-vacation/{id}` |
+| Paid | `print.paid` | `/paid-request/{id}` |
+| Compensation | `print.compensation` | `/request-for-compensation/{id}` |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Request workflow" icon="arrow-right-arrow-left" href="/guides/request-workflow">
+    Understand the approval stages that a request must pass through before it can be printed.
+  </Card>
+  <Card title="Email notifications" icon="envelope" href="/guides/email-notifications">
+    See how PDF print links are included in approval notification emails.
+  </Card>
+  <Card title="Vacation requests" icon="calendar-days" href="/features/vacation-requests">
+    Full reference for the vacation request form and status lifecycle.
+  </Card>
+  <Card title="Paid requests" icon="banknotes" href="/features/paid-requests">
+    Learn how paid time off requests are submitted and approved.
+  </Card>
+</CardGroup>

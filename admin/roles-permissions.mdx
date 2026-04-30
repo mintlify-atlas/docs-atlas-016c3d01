@@ -1,0 +1,163 @@
+---
+title: 'Roles and Permissions: Admin, Manager, and Employee'
+description: 'Learn how Filament Shield manages roles and permissions for admins, managers, and employees — including how to assign roles and regenerate permissions.'
+---
+
+Control de Vacaciones uses [Filament Shield](https://github.com/bezhanSalleh/filament-shield) — built on top of [Spatie Laravel Permission](https://spatie.be/docs/laravel-permission) — to control what each user can see and do inside the panel. Three application roles govern access: `admin`, `manager`, and `employee`. A fourth system role, `super_admin`, is created automatically during database seeding and bypasses all permission checks.
+
+## Navigate to role management
+
+Go to `/admin/shield/roles` in the admin panel. This page lists all roles. Click any role to view or edit the granular permissions assigned to it.
+
+<Note>
+Only users with the `super_admin` role or with the relevant Shield permissions can access the roles page. The `super_admin` role has unrestricted access to every part of the panel without any individual permissions needing to be set.
+</Note>
+
+## Application roles
+
+The three functional roles below are not created automatically by seeding — you create and configure them from `/admin/shield/roles` after the initial `db:seed` run.
+
+| Role | Internal name | Scope |
+|---|---|---|
+| Administrator | `admin` | Full access to all employees, requests, and settings |
+| Manager | `manager` | Department-scoped — can only see employees and requests in their own department |
+| Employee | `employee` | Own records only — sees only their own employee profile and their own requests |
+
+### Role badge colors and icons
+
+The users table displays each role as a badge with the following visual treatment, drawn from `UsersTable.php`:
+
+| Role | Badge color | Icon |
+|---|---|---|
+| `super_admin` | Primary (red) | User (default) |
+| `admin` | Danger (red) | Shield check |
+| `manager` | Secondary (gray) | Briefcase |
+| `employee` | Info (blue) | User circle |
+
+### How role-based visibility works
+
+The `Employee` model exposes a `scopeVisibleToUser` query scope that the employees table applies on every page load. The scope logic is:
+
+```php
+// app/Models/Employee.php
+public function scopeVisibleToUser($query, $user)
+{
+    if ($user->hasRole('admin')) {
+        return $query; // all employees
+    }
+
+    if ($user->hasRole('manager')) {
+        return $query->where('department_id', $user->employee?->department_id);
+    }
+
+    if ($user->hasRole('employee')) {
+        return $query->where('id', $user->employee?->id);
+    }
+
+    return $query;
+}
+```
+
+This means that visibility is enforced at the query level, not just the UI level — a manager can never retrieve rows outside their department even through direct API calls to the Filament endpoints.
+
+## Permission naming convention
+
+Shield generates permissions using PascalCase with a colon separator, for example `ViewAny:Employee` or `Delete:VacationRequest`. Every Filament resource in the application has a corresponding policy class in `app/Policies/` that checks these permissions.
+
+```php
+// app/Policies/EmployeePolicy.php
+public function viewAny(AuthUser $authUser): bool
+{
+    return $authUser->can('ViewAny:Employee');
+}
+
+public function delete(AuthUser $authUser, Employee $employee): bool
+{
+    return $authUser->can('Delete:Employee');
+}
+```
+
+The full set of policy methods generated for each resource is: `viewAny`, `view`, `create`, `update`, `delete`, `deleteAny`, `restore`, `forceDelete`, `forceDeleteAny`, `restoreAny`, `replicate`, and `reorder`.
+
+## The super_admin role
+
+The `super_admin` role is created and configured automatically when you run `php artisan db:seed`. It is defined in `config/filament-shield.php` with `define_via_gate` set to `false`, meaning all permissions are stored in the database and assigned explicitly to the user during seeding.
+
+```php
+// database/seeders/DatabaseSeeder.php
+$superAdminRole = Role::findOrCreate('super_admin', 'web');
+
+$superAdmin = User::factory()->create([
+    'name'     => 'Super Admin',
+    'email'    => 'admin@admin.com',
+    'password' => Hash::make('admin'),
+]);
+
+$superAdmin->assignRole($superAdminRole);
+$superAdmin->syncPermissions(Permission::all());
+```
+
+<Warning>
+The default super admin credentials (`admin@admin.com` / `admin`) are for initial setup only. Change the password immediately after your first login.
+</Warning>
+
+## Regenerate permissions after code changes
+
+Whenever you add a new Filament resource, page, or widget, you must regenerate permissions so that Shield can include the new entries in the role editor.
+
+<Steps>
+  <Step title="Run the Shield generate command">
+    ```bash
+    php artisan shield:generate --all --panel=control_de_vacaciones
+    ```
+    This scans all resources, pages, and widgets registered in the `control_de_vacaciones` panel and creates any missing permissions in the database.
+  </Step>
+  <Step title="Clear the permission cache">
+    ```bash
+    php artisan permission:cache-reset
+    ```
+    Shield and Spatie Permission cache permission lookups. Reset the cache so the new entries take effect immediately without a server restart.
+  </Step>
+  <Step title="Assign permissions to roles">
+    Navigate to `/admin/shield/roles`, open the role you want to update, and enable the new permissions from the resources, pages, or widgets tabs.
+  </Step>
+</Steps>
+
+<Tip>
+The seeder runs `shield:generate` automatically, so you only need to run the command manually when you add new resources after the initial installation.
+</Tip>
+
+## Assign a role to a user
+
+<Steps>
+  <Step title="Open the user record">
+    Go to `/admin/users` and click the edit icon on the user you want to update.
+  </Step>
+  <Step title="Select a role">
+    In the **Rol Info** section, open the **Rol del Usuario** dropdown and select the appropriate role.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The role takes effect on the user's next request — no logout is required if they are already logged in, but permission-gated pages will reflect the change immediately.
+  </Step>
+</Steps>
+
+## Permission tabs in the role editor
+
+The Shield role editor at `/admin/shield/roles` groups permissions into three tabs:
+
+| Tab | What it covers |
+|---|---|
+| **Resources** | CRUD permissions for every Filament resource (Employees, Departments, Users, etc.) |
+| **Pages** | View permissions for standalone Filament pages |
+| **Widgets** | View permissions for dashboard widgets (vacation requests, paid requests, compensation) |
+
+The **Custom permissions** tab is disabled in this application (`custom_permissions => false` in `config/filament-shield.php`).
+
+<CardGroup cols={2}>
+  <Card title="Manage users" icon="users" href="/admin/users">
+    Create user accounts and assign roles to control panel access.
+  </Card>
+  <Card title="Manage employees" icon="identification" href="/admin/employees">
+    Link user accounts to employee records to enable department-scoped visibility.
+  </Card>
+</CardGroup>

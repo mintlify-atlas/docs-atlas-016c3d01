@@ -1,0 +1,148 @@
+---
+title: 'Managing Employee Records: Create, Edit, and Archive'
+description: 'Learn how to create, edit, archive, and restore employee records in Control de Vacaciones, including status management and user account linking.'
+---
+
+The **Empleados** section under **Gestion del Sistema** is where you manage every person tracked by the system. Each employee record stores personal information, employment dates, department assignment, payroll type, current status, and a link to a user account. This page explains how to create new employees, edit existing records, manage statuses, and archive or restore records when needed.
+
+## Navigate to Employees
+
+Go to `/admin/employees` in the admin panel, or click **Empleados** in the left sidebar under **Gestion del Sistema**. The table lists every employee visible to your role — admins see all employees, managers see only employees in their own department, and employees see only their own record.
+
+## Employee fields
+
+The employee form is split into two sections.
+
+### Personal Info
+
+| Field | Label | Notes |
+|---|---|---|
+| `first_name` | Nombre | Required. Up to 100 characters. |
+| `last_name` | Apellido | Required. Up to 100 characters. |
+| `identity_number` | Numero de Identidad | Required. Up to 13 characters. Must be unique across all employees. |
+
+### Employee Info
+
+| Field | Label | Notes |
+|---|---|---|
+| `address_number` | Numero Direccion | Required. Up to 9 characters. Must be unique. |
+| `hiring_date` | Fecha de Contratacion | Required. Date picker. The date the employee was hired. |
+| `anniversary_date` | Fecha de Aniversario | Required. Date picker. Used for vacation accrual calculations. |
+| `department_id` | Departamento | Required. Select from existing departments. |
+| `employee_status` | Estado de Empleado | Required. One of three statuses — see below. |
+| `payroll_id` | Nomina | Required. Select the payroll type that applies to this employee. |
+| `user_id` | Usuario | Required. Select the user account that belongs to this employee. |
+
+<Note>
+The employee's display name throughout the panel is computed from `first_name` and `last_name` via the `getFullNameAttribute` accessor. You cannot set a full name directly — always fill in both name fields.
+</Note>
+
+## Employee status
+
+Each employee has one of three statuses, displayed as a color-coded badge in the table.
+
+| Status value | Label (UI) | Badge color | Icon |
+|---|---|---|---|
+| `active` | Activo | Green (success) | Check circle |
+| `inactive` | Inactivo | Yellow (warning) | Exclamation circle |
+| `vacations` | Vacaciones | Blue (info) | Calendar |
+
+Update an employee's status by opening the edit form and changing the **Estado de Empleado** select field.
+
+## Create an employee
+
+<Steps>
+  <Step title="Open the create form">
+    Navigate to `/admin/employees` and click **Nuevo Empleado** in the top-right corner.
+  </Step>
+  <Step title="Fill in Personal Info">
+    Enter the employee's **Nombre**, **Apellido**, and **Numero de Identidad**. The identity number must be unique — the form rejects a duplicate before saving.
+  </Step>
+  <Step title="Fill in Employee Info">
+    Enter the **Numero Direccion**, then pick **Fecha de Contratacion** and **Fecha de Aniversario** from the date pickers. Select the **Departamento**, **Estado de Empleado**, **Nomina**, and **Usuario** from their respective dropdowns.
+  </Step>
+  <Step title="Save the record">
+    Click **Create** (or **Save**). The new employee appears in the table immediately.
+  </Step>
+</Steps>
+
+<Warning>
+You must create the user account before creating the employee. The **Usuario** field requires an existing user — there is no inline user creation from the employee form. See [Users](/admin/users) for how to create user accounts.
+</Warning>
+
+## Edit an employee
+
+Click the **Editar** action on any row in the table to open the edit form. All fields are editable. The identity number and address number uniqueness checks ignore the current record, so you can save without changing those fields.
+
+## Link a user account
+
+The `user_id` field connects an employee record to a login account. One user account maps to one employee record. When a user logs in, the system uses this link to determine which department they belong to and which records they can access.
+
+Select the correct user from the **Usuario** dropdown when creating or editing an employee. If the dropdown is empty, first create the user account at `/admin/users`.
+
+## Role-based visibility
+
+The employee table automatically filters its results based on the role of the logged-in user.
+
+<Tabs>
+  <Tab title="Admin">
+    Sees all employees across every department. No filter is applied to the query.
+  </Tab>
+  <Tab title="Manager">
+    Sees only employees whose `department_id` matches the manager's own department. The filter is applied via the `visibleToUser` scope on the `Employee` model.
+  </Tab>
+  <Tab title="Employee">
+    Sees only their own record. The query filters to `id = user->employee->id`.
+  </Tab>
+</Tabs>
+
+## Archive and restore employees
+
+Control de Vacaciones uses **soft deletes** for employee records. Deleting an employee archives the record rather than permanently removing it from the database.
+
+<Steps>
+  <Step title="Archive an employee">
+    Click **Archivar** on the employee's row. A confirmation modal asks "Estas seguro/a que quieres borrar este Empleado". Click **Si, archivar** to confirm. The employee disappears from the default table view.
+  </Step>
+  <Step title="View archived employees">
+    Open the **Filters** panel in the table toolbar and enable the **Trashed** filter. Archived employees appear in the list with their deletion timestamp visible in the **deleted_at** column (toggle it on from column visibility if needed).
+  </Step>
+  <Step title="Restore an employee">
+    With the trashed filter active, select one or more archived employees using the row checkboxes. Open the **Bulk actions** menu and choose **Restore**.
+  </Step>
+  <Step title="Permanently delete">
+    With the trashed filter active, select the records and choose **Force delete** from the bulk actions menu. This action is irreversible.
+  </Step>
+</Steps>
+
+<Tip>
+Use archiving instead of force deletion whenever possible. Archived employees retain their vacation history, balance records, and request history, which may be needed for audits.
+</Tip>
+
+## Table columns and search
+
+The employees table displays the following columns by default:
+
+| Column | Description |
+|---|---|
+| `id` | System ID. Searchable. |
+| Nombre | Full name from `first_name` + `last_name`. Search works across both fields. |
+| Numero de Identidad | Identity number. Searchable. |
+| Numero Direccion | Address number. Searchable. |
+| Fecha Contratacion | Hiring date, formatted as a date. |
+| Fecha Aniversario | Anniversary date, formatted as a date. |
+| Departamento | Name of the linked department. |
+| Estado | Status badge with color and icon. |
+| Nomina | Payroll type name. |
+| Usario | Linked user account name. |
+
+The `deleted_at`, `created_at`, and `updated_at` columns are hidden by default. Toggle them on using the column visibility control in the table toolbar.
+
+<CardGroup cols={2}>
+  <Card title="Manage departments" icon="briefcase" href="/admin/departments">
+    Learn how to create and organize the departments that employees are assigned to.
+  </Card>
+  <Card title="Manage users" icon="users" href="/admin/users">
+    Learn how to create user accounts and link them to employee records.
+  </Card>
+</CardGroup>

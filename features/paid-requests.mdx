@@ -1,0 +1,218 @@
+---
+title: "Paid Requests: Convert Accrued Vacation to Payment"
+description: "Learn how employees submit paid vacation requests, what each form field means, and how business days are counted for solicitudes de pago."
+---
+
+A paid request (*Solicitud de Pago de Vacaciones*) lets an employee convert accrued vacation days into a cash payment instead of taking time off. Rather than booking absence dates, the employee specifies how many days they want to be compensated for, the date range those days fall within, and the system confirms the totals against their balance. This page covers every form field, the business-day counting logic, the approval status workflow, and the role-based visibility rules that determine which records each user can see.
+
+## Navigating to paid requests
+
+Paid requests appear under **Solicitudes → Solicitudes Pagadas** in the left navigation. The resource is registered at `app/Filament/Resources/PaidRequests/PaidRequestResource.php` and writes to the `paid_request` database table.
+
+## Creating a paid request
+
+<Steps>
+  <Step title="Open the create form">
+    Click the **Nueva Solicitud de Pago** button on the list page. The form pre-fills the authenticated employee and sets the request date to now.
+  </Step>
+  <Step title="Enter days to compensate">
+    Fill in **Dias a Compensar** (`days_to_compensate`). This is the number of business days you want paid out. As soon as you enter a value, the form automatically copies it into `paid_accrued` and `paid_total`.
+  </Step>
+  <Step title="Select the date range">
+    Choose **Fecha de Inicio** and **Fecha Final** under the *Fechas de Dias a Compensar por Pago* sub-section. The form counts business days between them and writes the result to `total_days`.
+  </Step>
+  <Step title="Review balance fields">
+    The read-only **Balance de Vacaciones Disponibles** field shows the employee's current vacation balance from `balance_vacations`. The *Balance de Compensacion por Pago* sub-section shows `paid_accrued`, `used`, and `paid_total` — all editable before submission.
+  </Step>
+  <Step title="Add a reason">
+    Fill in the **Descripcion** textarea under *Motivo por el cual Pide dias Pagados* to explain why paid compensation is being requested.
+  </Step>
+  <Step title="Save or submit">
+    Use the header action buttons to save as draft or submit the request for approval.
+  </Step>
+</Steps>
+
+## Form fields reference
+
+### Request information section
+
+| Field | Label | Type | Notes |
+|---|---|---|---|
+| `employee_id` | Empleado Solicitante | Select (relationship) | Pre-set to authenticated user's employee; disabled and dehydrated. Only employees with a balance record are listed. |
+| `status` | Estado de la Solicitud | Select (enum) | Defaults to `Draft`; always disabled — changed only via header action buttons |
+| `request_date` | Fecha de Creacion | DateTimePicker | Read-only; defaults to `now()` at creation time |
+| `days_to_compensate` | Dias a Compensar | TextInput (numeric) | Required; minimum 0; triggers auto-fill of `paid_accrued` and `paid_total` |
+| `start_date` | Fecha de Inicio | DatePicker | Required; triggers `total_days` recalculation |
+| `end_date` | Fecha Final | DatePicker | Required; triggers `total_days` recalculation |
+| `total_days` | Dias Totales | TextInput (numeric) | Required; auto-calculated from the date range; helper text: "Dias habiles" |
+
+### Balance section
+
+| Field | Label | Type | Notes |
+|---|---|---|---|
+| `balance` | Balance de Vacaciones Disponibles | TextInput | Read-only; pulled live from `BalanceVacation` for the selected employee |
+| `paid_accrued` | Acumulado | TextInput | Auto-filled from `days_to_compensate`; editable |
+| `used` | Usado | TextInput | Editable; defaults to 0 |
+| `paid_total` | Dias Totales para Compensar con Pago | TextInput | Auto-filled from `days_to_compensate`; editable |
+| `comment` | Descripcion | Textarea | Optional; max 255 characters |
+
+### Auto-fill behaviour when entering days to compensate
+
+When you type a value into `days_to_compensate`, the form immediately sets both `paid_accrued` and `paid_total` to the same number:
+
+```php
+// PaidRequestForm.php — afterStateUpdated on days_to_compensate
+->afterStateUpdated(function ($state, callable $set) {
+    $set('paid_accrued', $state);
+    $set('paid_total', $state);
+})
+```
+
+### Fields locked by status
+
+The fields below are **disabled** once the request reaches `pending`, `approved`, `rejected`, or `approved_by_manager`:
+
+- `days_to_compensate`
+- `start_date`
+- `end_date`
+- `total_days`
+- `comment`
+
+```php
+// PaidRequestForm.php — disabled condition
+->disabled(fn($get) => in_array($get('status'), [
+    RequestStatus::Approved,
+    RequestStatus::Rejected,
+    RequestStatus::Pending,
+    RequestStatus::ApprovedByManager
+]))
+```
+
+<Note>
+`employee_id`, `status`, and `request_date` are always read-only. They are managed by the system, not by the user through the form.
+</Note>
+
+## Business-day calculation
+
+When either `start_date` or `end_date` changes, the form iterates day-by-day from start to end using Carbon and skips any day where `isWeekend()` returns `true`. The count is stored in `total_days`.
+
+```php
+// PaidRequestForm.php — afterStateUpdated on start_date / end_date
+$diasHabiles = 0;
+$inicio = Carbon::parse($fechaInicio);
+$fin = Carbon::parse($fechaFin);
+
+while ($inicio->lte($fin)) {
+    if (!$inicio->isWeekend()) {
+        $diasHabiles++;
+    }
+    $inicio->addDay();
+}
+
+$set('total_days', $diasHabiles);
+```
+
+<Warning>
+Public holidays are not excluded. Only Saturdays and Sundays are skipped. Verify that `total_days` matches the intended billable days before submitting.
+</Warning>
+
+## Status lifecycle
+
+Paid requests share the same `RequestStatus` enum used across all request types. The complete set of states is:
+
+| Enum case | Value | Label | Badge colour |
+|---|---|---|---|
+| `Draft` | `draft` | Borrador | gray |
+| `Pending` | `pending` | Pendiente | primary (amber) |
+| `ApprovedByManager` | `approved_by_manager` | Aprobadas por el Jefe | info |
+| `ApprovedByRRHH` | `approved_by_rrhh` | Aprobadas por RRHH | info |
+| `Approved` | `approved` | Aprobadas | success |
+| `Rejected` | `rejected` | Rechazadas | danger |
+
+The workflow follows the same two-step approval pattern as vacation requests: the manager approves first (moving status to `ApprovedByManager`), then the admin (RRHH) grants final approval (moving status to `Approved`).
+
+<Tabs>
+  <Tab title="Employee">
+    Creates the request in `Draft`, then submits it to move to `Pending`. Receives notifications on approval or rejection.
+  </Tab>
+  <Tab title="Manager">
+    Can approve a `Pending` request (→ `ApprovedByManager`) or reject it. Cannot act on drafts or already-approved records.
+  </Tab>
+  <Tab title="Admin (RRHH)">
+    Can approve an `ApprovedByManager` request (→ `Approved`) or reject it. Sees all non-draft records in the list plus their own drafts.
+  </Tab>
+</Tabs>
+
+## Change history
+
+Like all request types, the paid request form includes a collapsible **Historial de Cambios** section at the bottom. It renders the `filament.components.request-logs` view using polymorphic `RequestLog` records attached via `logs()` and `HasRequestLogs`. Each entry records the user, action, and timestamp of every status transition.
+
+## Role visibility rules
+
+The `scopeVisibleFor` method on `PaidRequest` (`app/Models/PaidRequest.php:57`) applies the same rules used across all request models:
+
+<Tabs>
+  <Tab title="Admin">
+    Admin users see **all** paid requests. In the table query, admins additionally see all non-draft records plus their own drafts, ordered newest-first.
+  </Tab>
+  <Tab title="Manager">
+    Managers see their own requests (all statuses) plus all non-draft requests from employees in the same `department_id`.
+
+    ```php
+    // PaidRequest::scopeVisibleFor
+    $employeeIds = Employee::where('department_id', $employee->department_id)
+        ->pluck('id')
+        ->push($employee->id);
+
+    return $query->whereIn('employee_id', $employeeIds);
+    ```
+  </Tab>
+  <Tab title="Employee">
+    Employees see only their own paid requests.
+
+    ```php
+    // PaidRequest::scopeVisibleFor
+    return $query->where('employee_id', $employee->id);
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+If the authenticated user has no linked employee record, the scope returns an empty result set (`whereRaw('1 = 0')`).
+</Note>
+
+## Database schema
+
+The `paid_request` table is created by `2026_03_09_214612_create_paid_request_table.php` and includes the following columns:
+
+```php
+$table->id();
+$table->foreignId('employee_id');
+$table->integer('total_days')->nullable();
+$table->string('status')->nullable();
+$table->dateTime('request_date')->nullable();
+$table->text('comment')->nullable();
+$table->integer('paid_accrued')->nullable();
+$table->date('start_date')->nullable();
+$table->date('end_date')->nullable();
+$table->integer('used')->nullable();
+$table->integer('paid_total')->nullable();
+$table->integer('days_to_compensate')->nullable();
+$table->softDeletes();
+$table->timestamps();
+```
+
+<CardGroup cols={2}>
+  <Card title="Vacation Requests" icon="calendar-date-range" href="/features/vacation-requests">
+    Submit standard time-off requests with date selection.
+  </Card>
+  <Card title="Compensation Requests" icon="scale" href="/features/compensation-requests">
+    Convert extra days worked into compensatory leave.
+  </Card>
+  <Card title="Vacation Balance" icon="clipboard-document-list" href="/features/vacation-balance">
+    View accrued, used, and pending vacation days per employee.
+  </Card>
+  <Card title="Dashboard" icon="chart-bar" href="/features/dashboard">
+    Monitor live request counts broken down by status.
+  </Card>
+</CardGroup>

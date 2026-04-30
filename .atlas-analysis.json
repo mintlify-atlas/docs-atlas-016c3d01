@@ -1,0 +1,81 @@
+{
+  "projectType": "saas",
+  "projectName": "Control de Vacaciones",
+  "projectDescription": "A full-stack Laravel/Filament web application for managing employee vacation requests, paid time off, and compensation requests with role-based access control for employees, managers, and HR administrators.",
+  "theme": "almond",
+  "primaryColor": "#fc2c24",
+  "lightColor": "#040404",
+  "darkColor": "#e29d78",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "deployment"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/vacation-requests",
+              "features/paid-requests",
+              "features/compensation-requests",
+              "features/vacation-balance",
+              "features/dashboard"
+            ]
+          },
+          {
+            "group": "Administration",
+            "pages": [
+              "admin/employees",
+              "admin/departments",
+              "admin/roles-permissions",
+              "admin/users"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/request-workflow",
+              "guides/email-notifications",
+              "guides/pdf-export",
+              "guides/configuration"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Vacation request management with multi-step approval workflow (Draft → Pending → Manager Approval → HR Approval → Approved/Rejected)",
+    "Paid time off (vacation pay) request tracking with accrual and balance management",
+    "Compensation request management for tracking days to compensate",
+    "Role-based access control (Admin, Manager, Employee) using Filament Shield",
+    "Real-time dashboard widgets showing request statistics per role",
+    "Email notifications for each request state change (pending, approved by manager, approved, rejected)",
+    "PDF export of requests using Laravel DomPDF",
+    "Audit log / change history for all request types",
+    "Docker-based deployment with MySQL, Redis, and queue workers",
+    "Vacation balance tracking with accruals, used days, and pending days"
+  ],
+  "publicApiSurface": [
+    "VacationRequestResource — CRUD for vacation requests (/admin/vacation-requests)",
+    "PaidRequestResource — CRUD for paid/vacation-pay requests (/admin/paid-requests)",
+    "RequestForCompensationResource — CRUD for compensation requests (/admin/request-for-compensations)",
+    "EmployeeResource — Employee management (/admin/employees)",
+    "BalanceVacations resource — Vacation balance tracking (/admin/balance-vacations)",
+    "DepartmentResource — Department management (/admin/departments)",
+    "TypeOfPayrollsResource — Payroll type management (/admin/type-of-payrolls)",
+    "UserResource — User/account management (/admin/users)",
+    "RequestStatus enum — approved, draft, pending, rejected, approved_by_manager, approved_by_rrhh",
+    "EmployeeStatus enum — active, inactive, vacations",
+    "VacationRequestsStatus widget — Stats overview for vacation requests",
+    "PaidRequestsStatus widget — Stats overview for paid requests",
+    "CompensationRequestsStatus widget — Stats overview for compensation requests"
+  ]
+}

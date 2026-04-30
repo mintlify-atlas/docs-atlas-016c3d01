@@ -1,0 +1,217 @@
+---
+title: "Vacation Requests: Submit and Track Employee Leave"
+description: "Learn how to create vacation requests, how business days are auto-calculated, how the RequestStatus workflow advances, and which roles see which records."
+---
+
+Vacation requests are the core transaction in Control de Vacaciones. When an employee needs time off, they open a new **Solicitud de Vacaciones**, pick their start and end dates, and the system automatically counts the qualifying business days against their available balance. This page explains every form field, the business-day calculation, the complete status lifecycle, and the role-based visibility rules that govern what each user sees in the list.
+
+## Navigating to vacation requests
+
+Vacation requests live under **Solicitudes → Solicitudes de Vacaciones** in the left navigation sidebar. The resource is registered at `app/Filament/Resources/VacationRequests/VacationRequestResource.php` and uses the `vacation_request` database table.
+
+## Creating a request
+
+<Steps>
+  <Step title="Open the create form">
+    Click the green **Nueva Solicitud de Vacaciones** button (outlined `document-duplicate` icon) at the top right of the list page.
+  </Step>
+  <Step title="Review the pre-filled employee">
+    The **Empleado Solicitante** field is pre-populated with the authenticated user's linked employee record and is disabled — you cannot change it. Only employees that already have a vacation balance record appear in the underlying relationship query.
+  </Step>
+  <Step title="Select dates">
+    Choose a **Fecha de Inicio** (start date) and **Fecha Final** (end date). As soon as both dates are set, the form recalculates **Total de Dias Habiles** automatically.
+  </Step>
+  <Step title="Review the balance">
+    The read-only **Vacaciones** field displays the employee's current available balance drawn from `balance_vacations.balance`. Use it to confirm you have enough days before submitting.
+  </Step>
+  <Step title="Add an optional comment">
+    Fill in **Comentario o Justificacion** to explain the reason for the leave. This field is optional and limited to free-form text.
+  </Step>
+  <Step title="Save as draft or submit">
+    Use **Guardar como borrador** to save without sending, or **Enviar solicitud** to change the status to `pending` and notify the manager. The send button validates that both dates are present and that `total_business_days` is at least 1.
+  </Step>
+</Steps>
+
+## Form fields reference
+
+| Field | Label | Type | Behaviour |
+|---|---|---|---|
+| `employee_id` | Empleado Solicitante | Select (relationship) | Defaults to authenticated user's employee; always disabled and dehydrated |
+| `status` | Estado de la Solicitud | Select (enum) | Defaults to `Draft`; always disabled — changed only by header action buttons |
+| `start_date` | Fecha de Inicio | DatePicker | Required; triggers business-day recalculation on change |
+| `end_date` | Fecha Final | DatePicker | Required; triggers business-day recalculation on change |
+| `total_business_days` | Total de Dias Habiles | TextInput | Read-only; auto-calculated from the date range |
+| `balance` | Vacaciones | TextInput | Read-only; pulled live from `BalanceVacation` for the selected employee |
+| `comment` | Comentario o Justificacion | Textarea | Optional free-text justification |
+
+### Fields locked by status
+
+The following fields become **disabled** as soon as the request reaches any of these statuses: `pending`, `approved`, `rejected`, or `approved_by_manager`.
+
+- `start_date`
+- `end_date`
+- `total_business_days`
+- `comment`
+
+```php
+// VacationRequestForm.php — disabled condition used on start_date, end_date, total_business_days, comment
+->disabled(fn($get) => in_array($get('status'), [
+    RequestStatus::Approved,
+    RequestStatus::Rejected,
+    RequestStatus::Pending,
+    RequestStatus::ApprovedByManager
+]))
+```
+
+<Note>
+The `employee_id` and `status` fields are always disabled regardless of status. Their values are managed programmatically by the create/edit page actions, not by the user through the form UI.
+</Note>
+
+## Business-day calculation
+
+When either `start_date` or `end_date` changes, the form iterates day-by-day from start to end using Carbon and skips any day where `isWeekend()` returns `true`. Saturdays and Sundays are never counted. The result is written to `total_business_days`.
+
+```php
+// VacationRequestForm.php — afterStateUpdated on start_date and end_date
+$diasHabiles = 0;
+$inicio = Carbon::parse($fechaInicio);
+$fin = Carbon::parse($fechaFin);
+
+while ($inicio->lte($fin)) {
+    if (!$inicio->isWeekend()) {
+        $diasHabiles++;
+    }
+    $inicio->addDay();
+}
+
+$set('total_business_days', $diasHabiles);
+```
+
+<Warning>
+Public holidays are **not** excluded from the calculation. Only calendar weekends (Saturday and Sunday) are skipped. If your organisation observes additional non-working days, you must deduct them manually from the comment or adjust the balance after approval.
+</Warning>
+
+## Status lifecycle
+
+Every vacation request has a `status` column cast to the `RequestStatus` enum (`app/States/RequestStatus.php`). The table below maps each value to its Spanish label, badge colour, and icon.
+
+| Enum case | Value | Label | Badge colour | Icon |
+|---|---|---|---|---|
+| `Draft` | `draft` | Borrador | gray | `document-text` |
+| `Pending` | `pending` | Pendiente | primary (amber) | `clock` |
+| `ApprovedByManager` | `approved_by_manager` | Aprobadas por el Jefe | info | `paper-airplane` |
+| `ApprovedByRRHH` | `approved_by_rrhh` | Aprobadas por RRHH | info | `paper-airplane` |
+| `Approved` | `approved` | Aprobadas | success | `check-circle` |
+| `Rejected` | `rejected` | Rechazadas | danger | `x-circle` |
+
+### Approval flow
+
+The two-step approval requires both a manager and an admin (RRHH) to approve before the request reaches `Approved`.
+
+<Tabs>
+  <Tab title="Employee">
+    1. Creates the request — status starts as `Draft`.
+    2. Clicks **Enviar Solicitud** — status moves to `Pending`.
+    3. Receives an in-app notification and email when the request is approved or rejected.
+  </Tab>
+  <Tab title="Manager">
+    1. Sees all `Pending` requests from their department in the list.
+    2. Opens the request and clicks **Aprobar Solicitud** (only enabled when status is `Pending`).
+    3. Status moves to `ApprovedByManager`. An email is sent to all admins.
+    4. Can also click **Rechazar Solicitud** when a request is `Pending`, which sets status to `Rejected` and requires a rejection comment.
+  </Tab>
+  <Tab title="Admin (RRHH)">
+    1. Sees all non-draft requests in the list (plus their own drafts).
+    2. Opens a request with status `ApprovedByManager` and clicks **Aprobar Solicitud**.
+    3. Status moves to `Approved`. An email and in-app notification are sent to the employee.
+    4. Can also reject a request that is `ApprovedByManager`.
+  </Tab>
+</Tabs>
+
+<Tip>
+An employee can edit or delete their own request while it is in `Draft` or `ApprovedByManager` status. Once the request reaches `Pending`, `Approved`, or `Rejected`, the Edit and Delete actions are hidden from the employee's row.
+</Tip>
+
+## List tabs
+
+The list page (`ListVacationRequests.php`) exposes six filter tabs at the top of the table, each scoped with `visibleFor`:
+
+| Tab | Label | Badge colour |
+|---|---|---|
+| `all` | Todas | — |
+| `draft` | Borrador | gray |
+| `pending` | Pendientes | primary |
+| `approved` | Aprobadas | success |
+| `approved_by_manager` | Aprobadas por Jefe | send (cyan) |
+| `rejected` | Rechazadas | danger |
+
+## Change history (Historial de Cambios)
+
+Every vacation request form includes a collapsible **Historial de Cambios** section at the bottom. It renders the `filament.components.request-logs` view, which displays the polymorphic `RequestLog` records attached to the request via `logs()`. Each log entry captures who performed the action and when the status changed. The section uses `Heroicon::Clock` as its icon and is always visible on edit pages.
+
+## Role visibility rules
+
+The `scopeVisibleFor` method on `VacationRequest` (`app/Models/VacationRequest.php:55`) controls which records each user can query.
+
+<Tabs>
+  <Tab title="Admin">
+    Admins see **all** vacation requests with no restrictions. In the table query (`VacationRequestsTable.php`), admins additionally see all non-draft records plus their own drafts, ordered newest-first.
+  </Tab>
+  <Tab title="Manager">
+    Managers see their own requests (including drafts) plus all non-draft requests from employees in the same `department_id`.
+
+    ```php
+    // VacationRequest::scopeVisibleFor
+    $employeeIds = Employee::where('department_id', $employee->department_id)
+        ->pluck('id')
+        ->push($employee->id);
+
+    return $query->whereIn('employee_id', $employeeIds);
+    ```
+  </Tab>
+  <Tab title="Employee">
+    Employees see only their own requests.
+
+    ```php
+    // VacationRequest::scopeVisibleFor
+    return $query->where('employee_id', $employee->id);
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+If the authenticated user has no linked employee record, `scopeVisibleFor` returns an empty result set (`whereRaw('1 = 0')`), preventing any data leakage.
+</Note>
+
+## Table columns
+
+The vacation requests table shows the following columns by default:
+
+| Column | Label | Notes |
+|---|---|---|
+| `employee.full_name` | Empleado Solicitante | Searchable by first and last name |
+| `start_date` | Fecha de Inicio | Formatted as date |
+| `end_date` | Fecha Final | Formatted as date |
+| `total_business_days` | Dias Totales | Center-aligned |
+| `created_at` | Fecha de Solicitud | Formatted as datetime |
+| `status` | Estado de la Solicitud | Badge with enum label, colour, and icon |
+| `comment` | Comentario | Truncated to 10 chars; full text on tooltip |
+| `rejection_comment` | Motivo de Rechazo | Hidden by default; populated from `commentsAdditional` with type `rejection` |
+| `updated_at` | Fecha de Aprobacion/Rechazo | Hidden by default |
+
+You can filter the table by status using the **Filtrar por Estado** dropdown that lists all `RequestStatus` options.
+
+<CardGroup cols={2}>
+  <Card title="Paid Requests" icon="banknotes" href="/features/paid-requests">
+    Request payment in lieu of unused vacation days.
+  </Card>
+  <Card title="Compensation Requests" icon="scale" href="/features/compensation-requests">
+    Convert extra days worked into compensatory time off.
+  </Card>
+  <Card title="Vacation Balance" icon="clipboard-document-list" href="/features/vacation-balance">
+    Understand how accrued, used, and pending days are tracked.
+  </Card>
+  <Card title="Dashboard" icon="chart-bar" href="/features/dashboard">
+    See live counts of all request statuses at a glance.
+  </Card>
+</CardGroup>

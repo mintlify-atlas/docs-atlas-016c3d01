@@ -1,0 +1,151 @@
+---
+title: "Email Notifications Sent at Each Request Approval Stage"
+description: "Learn which emails Control de Vacaciones sends at each approval stage, how queued mail works, and how to configure MAIL_* variables for SMTP delivery."
+---
+
+Control de Vacaciones sends an email notification every time a request moves to a status that requires another party to act or that gives the employee the outcome they were waiting for. All mail classes implement `Queueable`, so the queue worker dispatches them asynchronously — the user's browser response is never held up waiting for the mail server. This page covers which emails are sent, who receives them, and how to configure your mail driver in `.env`.
+
+## How email dispatch works
+
+When a reviewer clicks an action button (approve or reject) in the Filament panel, the edit page's `saveAs()` method updates the record status and, if the status actually changed, dispatches the relevant `Mailable` class via `Mail::to(...)->send(...)`. Because every mailable uses the `Queueable` trait, Laravel pushes the job onto the configured queue instead of sending it synchronously.
+
+The `queue` Docker service runs `php artisan queue:work` continuously and processes these jobs in the background. If a job fails, Laravel retries it up to three times (configured with `--tries=3`) before moving it to the `failed_jobs` table.
+
+<Note>
+  If you use `MAIL_MAILER=log` (the default), emails are written to `storage/logs/laravel.log` instead of being delivered. This is safe for local development but you must switch to an SMTP mailer before deploying to production.
+</Note>
+
+## Email events by request type
+
+<Tabs>
+  <Tab title="Vacation requests">
+    | Event | Class | Trigger | Recipient |
+    |-------|-------|---------|-----------|
+    | Request submitted | `PendingRequest` | Status → `Pending` | Department manager |
+    | Approved by manager | `ApprovedManagerRequest` | Status → `ApprovedByManager` | All admin (RRHH) users |
+    | Fully approved | `ApprovedRequest` | Status → `Approved` | Employee |
+    | Rejected | `RejectedRequest` | Status → `Rejected` | Employee |
+
+    All four classes live in `app/Mail/VacationRequest/`.
+
+    - **`PendingRequest`** subject: `Tienes una Solicitud de Vacaciones Pendiente #<id>`
+    - **`ApprovedManagerRequest`** subject: `Solicitud de Vacaciones Aprobada por Jefe #<id>`
+    - **`RejectedRequest`** subject: `Su solicitud de Vacaciones ha sido Rechazada #<id>`
+  </Tab>
+  <Tab title="Paid requests">
+    | Event | Class | Trigger | Recipient |
+    |-------|-------|---------|-----------|
+    | Request submitted | `PendingPaidRequest` | Status → `Pending` | Department manager |
+    | Approved by manager | `ApprovedManagerPaidRequest` | Status → `ApprovedByManager` | All admin users |
+    | Fully approved | `ApprovedPaidRequest` | Status → `Approved` | Employee |
+    | Rejected | `RejectedPaidRequest` | Status → `Rejected` | Employee |
+
+    All four classes live in `app/Mail/PaidRequest/`.
+
+    - **`PendingPaidRequest`** subject: `Tiene una Solicitud de Pago Pendiente #<id>`
+  </Tab>
+  <Tab title="Compensation requests">
+    | Event | Class | Trigger | Recipient |
+    |-------|-------|---------|-----------|
+    | Request submitted | `PendingCompensationRequest` | Status → `Pending` | Department manager |
+    | Approved by manager | `ApprovedManagerCompensationRequest` | Status → `ApprovedByManager` | All admin users |
+    | Fully approved | `ApprovedCompensationRequest` | Status → `Approved` | Employee |
+    | Rejected | `RejectedCompensationRequest` | Status → `Rejected` | Employee |
+
+    All four classes live in `app/Mail/CompensationRequest/`.
+  </Tab>
+</Tabs>
+
+## Email content
+
+Every email passes the request model, the acting user, and two URLs to its Blade view:
+
+- A direct link to the request's edit page in the Filament panel (`url`).
+- A signed PDF print route (`print`) so the recipient can download the request as a PDF directly from the email.
+
+Rejection emails send the employee to a dedicated rejection detail view (`detailsRejected` route) instead of the edit page, since rejected requests are locked.
+
+## Configuring the mail driver
+
+Open your `.env` file and update the `MAIL_*` variables. The table below describes each variable.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAIL_MAILER` | `log` | Mail driver: `log`, `smtp`, `sendmail`, or `mailgun` |
+| `MAIL_HOST` | `127.0.0.1` | SMTP server hostname |
+| `MAIL_PORT` | `2525` | SMTP port (common: `587` for TLS, `465` for SSL) |
+| `MAIL_USERNAME` | `null` | SMTP authentication username |
+| `MAIL_PASSWORD` | `null` | SMTP authentication password |
+| `MAIL_FROM_ADDRESS` | `hello@example.com` | The sender address shown to recipients |
+| `MAIL_FROM_NAME` | `${APP_NAME}` | The sender name shown in the inbox |
+
+### Example: switching to SMTP
+
+```bash
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
+MAIL_PORT=587
+MAIL_USERNAME=notifications@example.com
+MAIL_PASSWORD=your-smtp-password
+MAIL_FROM_ADDRESS="noreply@example.com"
+MAIL_FROM_NAME="Control de Vacaciones"
+```
+
+### Example: using Mailgun
+
+```bash
+MAIL_MAILER=mailgun
+MAILGUN_DOMAIN=mg.example.com
+MAILGUN_SECRET=your-mailgun-api-key
+MAIL_FROM_ADDRESS="noreply@example.com"
+MAIL_FROM_NAME="Control de Vacaciones"
+```
+
+<Tip>
+  For transactional email in production, services such as Mailgun, Postmark, or Amazon SES give better deliverability than a raw SMTP relay. Laravel supports all of them through the `MAIL_MAILER` driver.
+</Tip>
+
+## Queue driver for email delivery
+
+Emails are queued — not sent synchronously — so your `QUEUE_CONNECTION` setting directly affects when emails are delivered.
+
+| `QUEUE_CONNECTION` | Behaviour |
+|--------------------|-----------|
+| `database` | Jobs stored in the `jobs` table; processed by the `queue` service |
+| `redis` | Jobs stored in Redis; faster and recommended for production |
+| `sync` | Jobs run immediately in the same process (disables async — not recommended in production) |
+
+The default `.env.example` sets `QUEUE_CONNECTION=database`. For production Docker deployments, switch to `redis`:
+
+```bash
+QUEUE_CONNECTION=redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+```
+
+The `queue` Docker service starts automatically and processes jobs with:
+
+```bash
+php artisan queue:work --tries=3 --timeout=120 --sleep=1 --max-time=3600
+```
+
+<Warning>
+  If the queue worker is not running, emails will sit in the `jobs` table unprocessed. Check `docker compose ps` to confirm the `queue` service is running and `docker compose logs queue` to diagnose failures.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Request workflow" icon="arrow-right-arrow-left" href="/guides/request-workflow">
+    Understand the full approval chain and which status triggers each email.
+  </Card>
+  <Card title="PDF export" icon="file-pdf" href="/guides/pdf-export">
+    Learn how to download a request as a PDF directly from the panel.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    See all key environment variables including the full MAIL_* and QUEUE_* settings.
+  </Card>
+  <Card title="Deployment" icon="server" href="/deployment">
+    Deploy the full Docker stack including the queue worker service.
+  </Card>
+</CardGroup>

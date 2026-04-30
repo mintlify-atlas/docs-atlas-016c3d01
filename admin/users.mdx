@@ -1,0 +1,127 @@
+---
+title: 'User Account Management: Create Logins and Assign Roles'
+description: 'Learn how to create, edit, and manage user accounts in Control de Vacaciones, assign roles, and link accounts to employee records.'
+---
+
+**Usuarios**, found under **Gestion de Usuarios** in the sidebar, is where you manage every account that can log in to the panel. A user account provides authentication credentials and a role. For the account to appear in leave-management workflows, you must also link it to an employee record. This page explains how to create users, assign roles, and connect accounts to employees.
+
+## Navigate to users
+
+Go to `/admin/users` in the admin panel, or click **Usuarios** in the left sidebar under **Gestion de Usuarios**. The table lists all user accounts with their names, email addresses, roles, and email verification timestamps.
+
+## User fields
+
+The user form is divided into two sections.
+
+### Personal Info
+
+| Field | Label | Notes |
+|---|---|---|
+| `name` | Nombre de Usuario | Required. The display name shown throughout the panel. |
+| `email` | Correo | Required. Must be a valid email address. Used to log in. |
+| `password` | password | Required on create. Optional on edit — leave blank to keep the existing password. Stored as a bcrypt hash. |
+
+### Rol Info
+
+| Field | Label | Notes |
+|---|---|---|
+| `roles` | Rol del Usuario | Required. Select one role from the list managed by Filament Shield. |
+
+<Note>
+The password field is only required when creating a new user. When editing an existing user, leave the password field empty to keep the current password unchanged. If you enter a new value, it replaces the existing password immediately on save.
+</Note>
+
+## Create a user
+
+<Steps>
+  <Step title="Open the create form">
+    Navigate to `/admin/users` and click **Usuario** in the top-right corner.
+  </Step>
+  <Step title="Fill in Personal Info">
+    Enter the **Nombre de Usuario**, **Correo**, and a strong **password**. The email must be unique across all user accounts.
+  </Step>
+  <Step title="Assign a role">
+    In the **Rol Info** section, open the **Rol del Usuario** dropdown and select the appropriate role — `admin`, `manager`, or `employee`. See [Roles and Permissions](/admin/roles-permissions) for what each role can access.
+  </Step>
+  <Step title="Save the record">
+    Click **Create**. The new user appears in the table. They can now log in at `/admin` using the email and password you set.
+  </Step>
+</Steps>
+
+<Warning>
+A user account alone does not give someone access to leave requests or vacation balances. You must also create an employee record and set its **Usuario** field to this user account. Without that link, the system cannot determine the user's department or manage their leave data.
+</Warning>
+
+## Edit a user
+
+Click the edit icon on any row in the users table to open the edit form. You can update the name, email, password, and role. Changes to the role take effect immediately on the next panel request — no re-login is required.
+
+## Link a user to an employee record
+
+Users and employees are separate records connected by the `user_id` foreign key on the `employees` table. The relationship is one-to-one: each user can be linked to at most one employee, and each employee can be linked to at most one user.
+
+To establish the link:
+
+<Steps>
+  <Step title="Create the user first">
+    Create the user account at `/admin/users` before creating the employee. The employee form requires an existing user in the **Usuario** dropdown.
+  </Step>
+  <Step title="Open the employee form">
+    Navigate to `/admin/employees` and create a new employee or edit an existing one.
+  </Step>
+  <Step title="Select the user">
+    In the **Employee Info** section, open the **Usuario** dropdown and select the user account you just created.
+  </Step>
+  <Step title="Save the employee">
+    Click **Create** or **Save**. The link is now active. When this user logs in, the system resolves their department from the employee record and applies the correct visibility scope.
+  </Step>
+</Steps>
+
+## Table columns
+
+The users table displays the following columns:
+
+| Column | Description |
+|---|---|
+| Nombre de Usuario | The user's display name. Searchable. |
+| Email address | The login email address. Searchable. |
+| Rol | Role badge with color and icon. Multiple roles separated by commas if assigned. Searchable. |
+| email_verified_at | Timestamp of email verification. Visible by default. |
+
+The `created_at` and `updated_at` columns are hidden by default. Toggle them on using the column visibility control in the table toolbar.
+
+## Role badge reference
+
+The role column renders each role as a color-coded badge:
+
+| Role | Badge color | Icon |
+|---|---|---|
+| `super_admin` | Primary | User |
+| `admin` | Danger (red) | Shield check |
+| `manager` | Secondary (gray) | Briefcase |
+| `employee` | Info (blue) | User circle |
+
+## Log in to the panel
+
+Users log in at `/admin`. The application uses Laravel's default authentication flow. There is no separate registration page — all accounts are created by an administrator from within the panel.
+
+<Tip>
+If a user forgets their password, an admin can reset it by opening the user's edit form, entering a new password, and saving. The standard Laravel password reset email flow is available if your application has outgoing email configured.
+</Tip>
+
+## Archive a user
+
+The delete action on the users table is labeled **Archivar**. Like employees, users are soft-deleted by default — archiving a user prevents them from logging in but does not remove their account data from the database.
+
+<Warning>
+Archiving a user does not automatically unlink them from their employee record. If you archive a user, update or reassign the linked employee record to avoid orphaned references.
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Manage employees" icon="identification" href="/admin/employees">
+    Create employee records and link them to user accounts.
+  </Card>
+  <Card title="Roles and permissions" icon="shield-check" href="/admin/roles-permissions">
+    Understand what each role can access and how to configure permissions.
+  </Card>
+</CardGroup>

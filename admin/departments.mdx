@@ -1,0 +1,95 @@
+---
+title: 'Managing Departments: Group Employees by Work Unit'
+description: 'Learn how to create, edit, and organize departments in Control de Vacaciones. Departments group employees and determine manager visibility scope.'
+---
+
+**Departamentos**, found under **Gestion del Sistema** in the sidebar, is where you organize employees into logical work units. Every employee must belong to a department, and managers can only see employees in their own department. This page explains the department data model, the pre-seeded departments included with the application, and how to add new departments.
+
+## Navigate to Departments
+
+Go to `/admin/departments` in the admin panel, or click **Departamentos** in the left sidebar under **Gestion del Sistema**. The table lists all departments sorted alphabetically by name.
+
+## Department fields
+
+The department form has a single field.
+
+| Field | Label | Notes |
+|---|---|---|
+| `name` | name | Required. Up to 50 characters. The department name shown throughout the panel. |
+
+The database also stores an optional `employee_id` (used internally to link a manager to the department) and a `roles_id` field, but these are not exposed in the create or edit form — they are managed through the employee and user assignment process.
+
+<Note>
+Departments support soft deletes. Deleting a department archives it without permanently removing it from the database, preserving the historical relationship to employees.
+</Note>
+
+## Pre-seeded departments
+
+The application ships with 21 pre-seeded departments that reflect the organizational structure of the Hospital Adventista del Valle. These are created automatically when you run `php artisan db:seed`.
+
+| Department |
+|---|
+| IT |
+| Administracion |
+| RRHH |
+| Almacen |
+| Biomedico |
+| Compras |
+| Contabilidad |
+| Contraloria HVD |
+| Dietetica |
+| Direccion Medica |
+| Facturacion |
+| Farmacia |
+| Fisioterapia |
+| Laboratorio |
+| Rayos X |
+| Mantenimiento |
+| Registros Medicos |
+| Tesoreria |
+| Cuerpo Medico |
+| Sala Operacione |
+| Enfermeria |
+
+<Tip>
+If your organization uses different department names, you can edit the pre-seeded records directly in the panel at `/admin/departments` after the initial setup.
+</Tip>
+
+## Add a new department
+
+<Steps>
+  <Step title="Open the create form">
+    Navigate to `/admin/departments` and click **Nuevo Departamneto** in the top-right corner.
+  </Step>
+  <Step title="Enter the department name">
+    Type the department name in the **name** field. The name must be filled in — it is the only required field.
+  </Step>
+  <Step title="Save">
+    Click **Create**. The new department appears in the alphabetically sorted table and becomes immediately available in the **Departamento** dropdown on the employee form.
+  </Step>
+</Steps>
+
+## Edit a department
+
+Click the edit icon on any department row to open the edit form. Change the name and click **Save**. The updated name propagates automatically to all related employee records and dropdowns throughout the panel.
+
+## Department manager display
+
+The departments table shows a **Jefe Departamento** (department head) column. This column resolves to the full name of any employee in that department whose linked user account has the `manager` role. If no employee in the department has the manager role, the column is empty.
+
+This column is read-only in the departments table — you assign a manager by giving the appropriate user account the `manager` role and ensuring their employee record points to the correct department.
+
+## Relationship to employees
+
+Each employee record stores a `department_id` that references the department they belong to. The relationship is many-to-one: many employees can belong to one department, and one department can have many employees.
+
+When you archive a department, existing employees keep their `department_id` reference. Assign employees to a different active department before archiving if you want to avoid orphaned references.
+
+<CardGroup cols={2}>
+  <Card title="Manage employees" icon="identification" href="/admin/employees">
+    Assign employees to departments and manage their employment information.
+  </Card>
+  <Card title="Roles and permissions" icon="shield-check" href="/admin/roles-permissions">
+    Learn how the manager role determines which department employees a user can view.
+  </Card>
+</CardGroup>

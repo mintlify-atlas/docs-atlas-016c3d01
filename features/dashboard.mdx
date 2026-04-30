@@ -1,0 +1,162 @@
+---
+title: "Dashboard: Live Request Status Counts for Each Role"
+description: "Learn how the /admin dashboard shows live vacation, paid, and compensation request counts via role-scoped stats widgets for each authenticated user."
+---
+
+The dashboard at `/admin` is the first screen every authenticated user sees after logging in. It displays four widgets stacked vertically: a personal account card followed by three statistics panels — one for each request type. Each statistics panel shows the same four counts (Pendientes, Aprobadas, Rechazadas, Total) but scoped to the records that the current user is allowed to see, so employees see only their own numbers while managers see their whole department and admins see everything. This page describes how the dashboard is configured, what each widget shows, and how the role-based filtering works.
+
+## Dashboard location and configuration
+
+The dashboard is served at the `/admin` path by the `AdminPanelProvider` (`app/Providers/Filament/AdminPanelProvider.php`). Filament's built-in `Dashboard` page class is registered alongside four explicitly listed widgets:
+
+```php
+// AdminPanelProvider.php
+->widgets([
+    AccountWidget::class,
+    VacationRequestsStatus::class,
+    PaidRequestsStatus::class,
+    CompensationRequestsStatus::class,
+])
+```
+
+The panel uses Amber as its primary colour and disables global search. Database notifications are enabled and polled every 30 seconds, so approval and rejection alerts appear without a page reload.
+
+## AccountWidget
+
+The first widget is Filament's built-in `AccountWidget`. It shows the authenticated user's name, email address, and avatar at the top of the dashboard. It does not contain request data.
+
+## VacationRequestsStatus widget
+
+The **Estadísticas de Solicitud de vacaciones** widget (`app/Filament/Widgets/VacationRequestsStatus.php`) shows four stats cards for vacation requests:
+
+| Stat label | Spanish | Colour | Icon | What it counts |
+|---|---|---|---|---|
+| Pendientes | Pending | warning | `clock` | Requests with `status = pending` |
+| Aprobadas | Approved | success | `check-circle` | Requests with `status = approved` |
+| Rechazadas | Rejected | danger | `x-circle` | Requests with `status = rejected` |
+| Total | Total | primary | `document-text` | All visible requests regardless of status |
+
+Every query goes through `VacationRequest::visibleFor(Auth::user())`, so each count automatically respects the current user's role:
+
+```php
+// VacationRequestsStatus.php
+private function baseQuery()
+{
+    return VacationRequest::visibleFor(Auth::user());
+}
+```
+
+<Tabs>
+  <Tab title="Admin">
+    Sees counts for all vacation requests across the entire organisation. "Total" reflects every non-deleted record.
+  </Tab>
+  <Tab title="Manager">
+    Sees counts for their own requests plus all requests from employees in their department.
+  </Tab>
+  <Tab title="Employee">
+    Sees counts for only their own vacation requests.
+  </Tab>
+</Tabs>
+
+## PaidRequestsStatus widget
+
+The **Estadísticas de Solicitud de Compensacion Pagadas** widget (`app/Filament/Widgets/PaidRequestsStatus.php`) provides the same four stats cards for paid requests:
+
+| Stat label | Spanish | Colour | Icon | What it counts |
+|---|---|---|---|---|
+| Pendientes | Pending | warning | `clock` | Paid requests with `status = pending` |
+| Aprobadas | Approved | success | `check-circle` | Paid requests with `status = approved` |
+| Rechazadas | Rejected | danger | `x-circle` | Paid requests with `status = rejected` |
+| Total | Total | primary | `document-text` | All visible paid requests |
+
+Queries are scoped via `PaidRequest::visibleFor(Auth::user())`, applying the same three-tier role filtering:
+
+```php
+// PaidRequestsStatus.php
+private function baseQuery()
+{
+    return PaidRequest::visibleFor(Auth::user());
+}
+```
+
+## CompensationRequestsStatus widget
+
+The **Estadísticas de Solicitud de Compensacion** widget (`app/Filament/Widgets/CompensationRequestsStatus.php`) shows four stats cards for compensation requests:
+
+| Stat label | Spanish | Colour | Icon | What it counts |
+|---|---|---|---|---|
+| Pendientes | Pending | warning | `clock` | Compensation requests with `status = pending` |
+| Aprobadas | Approved | success | `check-circle` | Compensation requests with `status = approved` |
+| Rechazadas | Rejected | danger | `x-circle` | Compensation requests with `status = rejected` |
+| Total | Total | primary | `document-text` | All visible compensation requests |
+
+Queries are scoped via `RequestForCompensation::visibleFor(Auth::user())`:
+
+```php
+// CompensationRequestsStatus.php
+private function baseQuery()
+{
+    return RequestForCompensation::visibleFor(Auth::user());
+}
+```
+
+## How to read the numbers
+
+Each statistics widget uses the same stat structure. Here is what each number means in practice:
+
+<Accordion title="Pendientes — what does this count include?">
+**Pendientes** counts requests in `status = pending` only. It does **not** include `approved_by_manager` or `approved_by_rrhh`. A request waiting for the second approval step is not counted as pending on the dashboard — use the individual resource list tabs to see those intermediate states.
+</Accordion>
+
+<Accordion title="Aprobadas — does this include partial approvals?">
+**Aprobadas** counts only fully approved requests (`status = approved`). Requests that have been approved by the manager but not yet by RRHH (`approved_by_manager`) or approved by RRHH but not yet by the manager (`approved_by_rrhh`) are not included in this count.
+</Accordion>
+
+<Accordion title="Rechazadas — who rejected these?">
+**Rechazadas** counts all rejected requests regardless of which role performed the rejection. Both managers and admins can reject a request, and both contribute to this count.
+</Accordion>
+
+<Accordion title="Total — what does this include?">
+**Total** calls `baseQuery()->count()` with no additional status filter, counting every record that `visibleFor` returns. Drafts are included for the authenticated employee's own records; other users' drafts are excluded as per the visibility scope.
+</Accordion>
+
+## Role-based filtering summary
+
+All three widgets delegate filtering to the `visibleFor` scope on each model. The rules are consistent across all request types:
+
+| Role | What the widget counts |
+|---|---|
+| `admin` | All requests in the system (except other users' drafts) |
+| `manager` | Own requests + all non-draft requests from their department's employees |
+| `employee` | Own requests only |
+
+<Note>
+If the authenticated user has no linked employee record, `visibleFor` returns an empty query (`whereRaw('1 = 0')`), so all four stats display 0.
+</Note>
+
+## Notifications
+
+The admin panel enables database notifications with 30-second polling:
+
+```php
+// AdminPanelProvider.php
+->databaseNotifications()
+->databaseNotificationsPolling('30s')
+```
+
+When a vacation request is submitted, approved by a manager, fully approved, or rejected, the system sends in-app database notifications to the relevant users. These notifications appear in the notification bell in the top bar and update automatically every 30 seconds.
+
+<CardGroup cols={2}>
+  <Card title="Vacation Requests" icon="calendar-date-range" href="/features/vacation-requests">
+    Submit and track employee vacation requests through the approval workflow.
+  </Card>
+  <Card title="Paid Requests" icon="banknotes" href="/features/paid-requests">
+    Request payment in lieu of unused vacation days.
+  </Card>
+  <Card title="Compensation Requests" icon="scale" href="/features/compensation-requests">
+    Log extra days worked and convert them to compensatory time off.
+  </Card>
+  <Card title="Vacation Balance" icon="clipboard-document-list" href="/features/vacation-balance">
+    View and manage accrued and available vacation days per employee.
+  </Card>
+</CardGroup>

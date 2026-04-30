@@ -1,0 +1,88 @@
+---
+title: "Control de Vacaciones: HR Leave Management for Teams"
+description: "An overview of Control de Vacaciones — a Laravel 12 and Filament 5 SaaS application for managing employee vacation, paid time off, and compensation requests."
+---
+
+Control de Vacaciones is a multi-role HR leave management system built on Laravel 12 and Filament 5. It gives employees, managers, and HR administrators a unified panel to submit and approve vacation requests, paid time off, and compensation days — with automatic business-day calculation, vacation balance tracking, email notifications, and a complete audit log for every status change.
+
+## What the system does
+
+The application covers the full lifecycle of employee leave: from the moment an employee opens a draft request to the final approval by HR. Every request type — vacation days, paid time off, and compensation days — follows the same multi-step approval workflow and sends email notifications at each transition. Administrators can manage employees, departments, payroll types, and role-based permissions from the same panel.
+
+<CardGroup cols={2}>
+  <Card title="Vacation requests" icon="calendar-days" href="/features/vacation-requests">
+    Submit vacation requests with automatic weekday-only business-day calculation and balance checks.
+  </Card>
+  <Card title="Paid time off" icon="money-bill-wave" href="/features/paid-requests">
+    Create and track paid vacation pay requests tied to each employee's accrued balance.
+  </Card>
+  <Card title="Compensation requests" icon="clock-rotate-left" href="/features/compensation-requests">
+    Log extra days worked and request equivalent time off through the compensation request flow.
+  </Card>
+  <Card title="Vacation balance" icon="scale-balanced" href="/features/vacation-balance">
+    Track accrued total, days used, pending days, and remaining balance per employee.
+  </Card>
+  <Card title="Dashboard" icon="chart-bar" href="/features/dashboard">
+    Role-aware statistics widgets show pending, approved, and rejected request counts at a glance.
+  </Card>
+  <Card title="Request workflow" icon="arrow-right-arrow-left" href="/guides/request-workflow">
+    Understand the full approval chain from Draft through Manager and HR approvals to final Approved state.
+  </Card>
+</CardGroup>
+
+## Roles
+
+Access to records and actions is controlled by three roles enforced through [Filament Shield](https://github.com/bezhanSalleh/filament-shield) (spatie/laravel-permission).
+
+| Role | What they can see | What they can do |
+|------|-------------------|------------------|
+| **Employee** | Their own requests only | Submit, edit, and archive Draft requests |
+| **Manager** | Their own requests + their department's non-draft requests | Approve or reject requests from their department |
+| **Admin** | All non-draft requests + their own requests | Full access: approve, reject, manage employees, departments, payroll types, and users |
+
+A `super_admin` role is created by the database seeder and is granted all Shield permissions automatically.
+
+<Note>
+  The seeder creates an initial `super_admin` user with email `admin@admin.com` and password `admin`. Change these credentials immediately after your first deployment.
+</Note>
+
+## Request status lifecycle
+
+Every request — vacation, paid, or compensation — goes through the `RequestStatus` enum defined in `app/States/RequestStatus.php`:
+
+| Status | Label | Meaning |
+|--------|-------|---------|
+| `draft` | Borrador | Saved but not yet submitted for review |
+| `pending` | Pendiente | Submitted and waiting for manager review |
+| `approved_by_manager` | Aprobadas por el Jefe | Approved by the department manager, awaiting HR |
+| `approved_by_rrhh` | Aprobadas por RRHH | Approved by HR, awaiting final confirmation |
+| `approved` | Aprobadas | Fully approved by all parties |
+| `rejected` | Rechazadas | Rejected at any stage; reason stored in request comments |
+
+## Technology stack
+
+Control de Vacaciones is built entirely on open-source software with no proprietary dependencies.
+
+| Layer | Technology | Version |
+|-------|------------|---------|
+| Framework | Laravel | ^12.0 |
+| Admin panel | Filament | ^5.0 |
+| Runtime | FrankenPHP + Laravel Octane | PHP 8.4 |
+| Database | MySQL | 8.0 |
+| Cache & queue | Redis | 7 (Alpine) |
+| PDF generation | barryvdh/laravel-dompdf | ^3.1 |
+| Role management | Filament Shield (spatie/laravel-permission) | ^4.2 |
+| Containerization | Docker + Docker Compose | — |
+
+The production image is a two-stage Docker build: a builder stage compiles PHP extensions and Vite assets, and the runtime stage uses `dunglas/frankenphp` with Laravel Octane to serve the application on port 8080.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Log in and submit your first vacation request in minutes.
+  </Card>
+  <Card title="Deployment" icon="server" href="/deployment">
+    Deploy the application with Docker Compose in a few commands.
+  </Card>
+</CardGroup>

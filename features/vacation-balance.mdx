@@ -1,0 +1,215 @@
+---
+title: "Vacation Balance: Accrued and Available Days per Employee"
+description: "Understand how Control de Vacaciones calculates accrued totals, yearly accruals, used days, and the live balance shown on every vacation request form."
+---
+
+The vacation balance (*Balance de Vacaciones*) is a single record per employee that stores the authoritative count of accrued, used, and pending vacation days. Every time an employee opens a vacation request, paid request, or compensation request form, the system reads the `balance` field from this record in real time to show available days. This page explains what each field in the balance record means, how the totals are calculated, how to read the table, and which roles can view or edit balance records.
+
+## Navigating to vacation balances
+
+Vacation balances are found under **Gestion de Vacaciones → Balance de Vacaciones** in the sidebar (navigation sort order 3). The resource is defined in `app/Filament/Resources/BalanceVacations/BalanceVacationResource.php` and writes to the `balance_vacation` database table.
+
+<Note>
+Only administrators can create or edit balance records. The balance resource lives in the **Gestion de Vacaciones** navigation group, separate from the **Solicitudes** group that contains vacation, paid, and compensation requests.
+</Note>
+
+## What the balance record stores
+
+Each `balance_vacation` row represents one employee's vacation entitlement at a point in time. The `BalanceVacation` model (`app/Models/BalanceVacation.php`) declares these fillable fields:
+
+| Field | Label | Type | Meaning |
+|---|---|---|---|
+| `employee_id` | Nombre Empleado | Foreign key | Links to the `employees` table; must be unique per employee |
+| `accrued_total` | Total Acumulado | Integer | Total vacation days the employee has earned from their hiring date to today, calculated as `years_worked × payroll.vacations_days` |
+| `accrued_this_year` | Acumulado este Año | Integer | Days accumulated since the employee's last work anniversary, computed proportionally using a monthly rate of 1.83 days per month |
+| `used` | Vacaciones Usadas | Integer | Days already taken; entered manually by admin; triggers recalculation of `balance` and `pendings` |
+| `balance` | Balance | Integer | Remaining days: `accrued_total − used`; can be negative if usage exceeds accrual |
+| `pendings` | Pendientes de Gozar | Integer | Days from the current-year accrual not yet scheduled: `balance − accrued_this_year` |
+| `notes` | Descripcion de vacaciones usadas | String | Free-text notes about how used days were consumed (optional) |
+
+## How accrued totals are calculated
+
+The `BalanceVacationForm` class computes two values automatically when you select an employee on the create form.
+
+### Total accrued (`accrued_total`)
+
+The form calls `calculateAccruedTotal()`, which multiplies full years worked (from `hiring_date` to today) by the number of vacation days defined in the employee's payroll type (`payroll.vacations_days`):
+
+```php
+// BalanceVacationForm::calculateAccruedTotal
+$yearsWorked = Carbon::parse($employee->hiring_date)->diffInYears(now());
+return (int) round($yearsWorked * ($payroll->vacations_days ?? 0));
+```
+
+### This-year accrual (`accrued_this_year`)
+
+The form calls `calculateAccruedThisYear()`, which counts the days elapsed since the employee's most recent work anniversary and applies a rate of 1.83 days per month (equivalent to 22 days per year):
+
+```php
+// BalanceVacationForm::calculateAccruedThisYear
+$anniversaryThisYear = $hiringDate->copy()->year($today->year);
+if ($today->lt($anniversaryThisYear)) {
+    $anniversaryThisYear->subYear();
+}
+$days = $anniversaryThisYear->diffInDays($today);
+$vacationDays = ($days / 30) * 1.83;
+return (int) round($vacationDays);
+```
+
+<Tip>
+`accrued_total` and `accrued_this_year` are read-only on the form. They are computed when you first pick the employee and cannot be overridden manually. Only `used` is directly editable, and changing it recalculates both `balance` and `pendings` in real time.
+</Tip>
+
+## Understanding the balance fields together
+
+The four numeric fields relate to each other as follows:
+
+```
+balance   = accrued_total - used
+pendings  = balance - accrued_this_year
+```
+
+| Example | Value |
+|---|---|
+| `accrued_total` | 30 |
+| `accrued_this_year` | 11 |
+| `used` | 10 |
+| `balance` | 20 (`30 − 10`) |
+| `pendings` | 9 (`20 − 11`) |
+
+`pendings` represents carry-over days from previous years that the employee has not yet scheduled. A negative `pendings` value means the employee has consumed more than their current-year entitlement.
+
+## How the balance appears on request forms
+
+When an employee opens a vacation request, paid request, or compensation request form, the read-only balance field is populated with a live database lookup against `balance_vacation.balance` for the authenticated employee:
+
+```php
+// VacationRequestForm.php — balance field default
+->default(
+    fn($get) =>
+    BalanceVacation::where('employee_id', $get('employee_id'))->value('balance')
+)
+```
+
+This means the balance shown on the request form always reflects the current stored value — it does not automatically deduct pending or in-progress requests. Admins must update the `used` field after approving requests to keep the balance accurate.
+
+<Warning>
+The vacation request approval process does not automatically decrement `balance`. After approving a vacation request, an admin must manually update the employee's `used` field on the balance record to keep the numbers current.
+</Warning>
+
+## Role visibility rules
+
+Vacation balances use the `scopeVisibleToUser` method on `BalanceVacation` (`app/Models/BalanceVacation.php:27`), which applies different filters depending on the user's role.
+
+<Tabs>
+  <Tab title="Admin">
+    Admins see **all** balance records with no restrictions. The table query calls `visibleToUser()` which returns an unfiltered result set for the `admin` role.
+
+    ```php
+    // BalanceVacation::scopeVisibleToUser
+    if ($user->hasRole('admin')) {
+        return $query; // no filter
+    }
+    ```
+  </Tab>
+  <Tab title="Manager">
+    Managers see their own balance record plus all balance records belonging to employees in the same department.
+
+    ```php
+    // BalanceVacation::scopeVisibleToUser
+    if ($user->hasRole('manager')) {
+        return $query->where(function ($q) use ($employee) {
+            $q->where('employee_id', $employee->id)
+              ->orWhereHas('employee', function ($emp) use ($employee) {
+                  $emp->where('department_id', $employee->department_id);
+              });
+        });
+    }
+    ```
+  </Tab>
+  <Tab title="Employee">
+    Employees see only their own balance record.
+
+    ```php
+    // BalanceVacation::scopeVisibleToUser
+    if ($user->hasRole('employee')) {
+        return $query->where('employee_id', $employee->id);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+A user with no linked employee record sees no balance records (`whereRaw('1 = 0')`). A user with no recognised role also sees nothing.
+</Note>
+
+## Creating a balance record
+
+Only administrators have access to the **Nuevo Balance** create form. The form shows additional employee information fields (identity number, address, hiring date, anniversary date, department, payroll type, user) that are visible only on create — they are hidden on edit. These fields pull data from the employee relationship when you select an employee, but they are not saved to `balance_vacation` (they are `dehydrated(false)`). Their purpose is to provide context while setting the initial balance values.
+
+<Steps>
+  <Step title="Select an employee">
+    Choose an active employee from the **Nombre Empleado** select. Only employees with `employee_status = Active` appear in the list. After selecting, `accrued_total`, `accrued_this_year`, `balance`, and `pendings` are auto-calculated and pre-filled.
+  </Step>
+  <Step title="Verify the calculated accruals">
+    Review the read-only **Total Acumulado** and **Acumulado este Año** values to confirm they reflect the correct payroll entitlement.
+  </Step>
+  <Step title="Enter used days">
+    If the employee has already taken vacation days not yet tracked in the system, enter the count in **Vacaciones Usadas**. The form immediately recalculates `balance` and `pendings`.
+  </Step>
+  <Step title="Add notes (optional)">
+    Use the **Descripcion de vacaciones usadas** textarea to document which periods contributed to the used-days count.
+  </Step>
+  <Step title="Save the record">
+    Click the create button. Each employee can have only one balance record — the `employee_id` field has a unique validation constraint.
+  </Step>
+</Steps>
+
+## Table columns
+
+The vacation balances table displays the following columns:
+
+| Column | Label | Notes |
+|---|---|---|
+| `id` | ID | Center-aligned; searchable |
+| `employee.full_name` | Nombre Empleado | Searchable by first and last name |
+| `accrued_total` | Total Acumulado | Center-aligned; searchable |
+| `accrued_this_year` | Acumulado este Año | Center-aligned; searchable |
+| `used` | Vacaciones Usadas | Center-aligned; searchable |
+| `balance` | Balance de Vacaciones | Center-aligned; searchable |
+| `pendings` | Pendientes de Gozar | Center-aligned; searchable |
+| `notes` | Notas | Truncated to 10 chars; full text on tooltip |
+
+The table supports a **Trashed** filter to show soft-deleted (archived) records.
+
+## Database schema
+
+The `balance_vacation` table is created by `2026_03_13_210049_create_balance_vacation_table.php`:
+
+```php
+$table->id();
+$table->integer('accrued_total')->nullable();
+$table->integer('accrued_this_year')->nullable();
+$table->integer('used')->nullable();
+$table->integer('balance')->nullable();
+$table->integer('pendings')->nullable();
+$table->string('notes')->nullable();
+$table->integer('employee_id');
+$table->softDeletes();
+$table->timestamps();
+```
+
+<CardGroup cols={2}>
+  <Card title="Vacation Requests" icon="calendar-date-range" href="/features/vacation-requests">
+    Submit time-off requests that read the live balance in the form.
+  </Card>
+  <Card title="Paid Requests" icon="banknotes" href="/features/paid-requests">
+    Request cash compensation for accrued vacation days.
+  </Card>
+  <Card title="Compensation Requests" icon="scale" href="/features/compensation-requests">
+    Log extra days worked and convert them into compensatory leave.
+  </Card>
+  <Card title="Dashboard" icon="chart-bar" href="/features/dashboard">
+    Monitor all request statuses at a glance from the main dashboard.
+  </Card>
+</CardGroup>

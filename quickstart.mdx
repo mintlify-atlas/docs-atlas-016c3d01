@@ -1,81 +1,137 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Quickstart: Log In and Submit Your First Vacation Request"
+description: "Log in to the admin panel, navigate to vacation requests, and submit your first request — with status, date fields, and business-day calculation explained."
 ---
 
-## Get started in three steps
+This guide walks you through logging in to the Control de Vacaciones admin panel and submitting your first vacation request. You will learn how the form fields map to the underlying `vacation_request` table, how the system calculates business days automatically, and what each request status means for the approval workflow.
 
-Get your documentation site running locally and make your first customization.
+## Before you begin
 
-### Step 1: Set up your local environment
+You need:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- A running instance of Control de Vacaciones (see [Deployment](/deployment) if you haven't set one up yet)
+- A user account with an associated employee record — the form will not display a submitting employee unless your user has a linked `employees` record with an existing vacation balance
 
-### Step 2: Deploy your changes
+<Info>
+  The database seeder creates a `super_admin` user at `admin@admin.com` / `admin`. This account has full access to the panel but you should create a dedicated employee-linked user for day-to-day leave requests.
+</Info>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+## Submit your first vacation request
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+<Steps>
+  <Step title="Log in to the admin panel">
+    Navigate to `/admin` in your browser. Enter your email and password on the Filament login screen and click **Sign in**.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    After authenticating, the dashboard loads and shows statistics widgets for vacation requests, paid time off, and compensation requests scoped to your role.
+  </Step>
 
-### Step 3: Go live
+  <Step title="Open the vacation requests list">
+    In the left sidebar, expand the **Solicitudes** navigation group and click **Solicitudes de Vacaciones**.
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    The list table shows all requests visible to your role:
+
+    - **Employees** see only their own requests.
+    - **Managers** see their own requests and all non-draft requests from their department.
+    - **Admins** see all non-draft requests plus their own drafts.
+  </Step>
+
+  <Step title="Create a new request">
+    Click the **Nueva Solicitud de Vacaciones** button in the top-right corner of the list page. The creation form opens with the following fields:
+
+    | Field | Column | Description |
+    |-------|--------|-------------|
+    | **Empleado Solicitante** | `employee_id` | Pre-filled with your linked employee record. Read-only. |
+    | **Estado de la Solicitud** | `status` | Defaults to `draft` (Borrador). Read-only on creation. |
+    | **Fecha de Inicio** | `start_date` | The first day of your vacation period. |
+    | **Fecha Final** | `end_date` | The last day of your vacation period. |
+    | **Total de Dias Habiles** | `total_business_days` | Calculated automatically. Read-only. |
+    | **Comentario o Justificacion** | `comment` | Optional free-text note or justification. |
+
+    A read-only **Vacaciones** field above the comment section shows your current available vacation balance pulled from the `balance_vacation` table.
+  </Step>
+
+  <Step title="Select your dates">
+    Click **Fecha de Inicio** and pick the first day of your vacation. Then click **Fecha Final** and pick the last day.
+
+    As soon as you set either date, the form recalculates **Total de Dias Habiles** automatically. The calculation iterates over every calendar day from `start_date` to `end_date` and counts only weekdays (Monday–Friday), skipping Saturdays and Sundays.
+
+    ```php
+    // From app/Filament/Resources/VacationRequests/Schemas/VacationRequestForm.php
+    while ($inicio->lte($fin)) {
+        if (!$inicio->isWeekend()) {
+            $diasHabiles++;
+        }
+        $inicio->addDay();
+    }
+    $set('total_business_days', $diasHabiles);
+    ```
+
+    <Tip>
+      Public holidays are not excluded from the calculation automatically. If your organization observes specific holidays, verify the total before submitting.
+    </Tip>
+  </Step>
+
+  <Step title="Save as draft or submit">
+    Click **Crear Solicitud de Vacaciones** to save the record. The request is saved with `status = draft`.
+
+    A draft request is visible only to you. To move it into the approval workflow you (or an admin) must transition it to `pending` status from the edit view. Once a request is `pending`, the date fields and comment field become read-only and the record appears in your manager's list.
+  </Step>
+</Steps>
+
+## Request status reference
+
+The `RequestStatus` enum in `app/States/RequestStatus.php` defines all possible states. The table below shows each value, its display label, badge color, and what it means in the workflow.
+
+| Enum case | Value | Label | Color | Meaning |
+|-----------|-------|-------|-------|---------|
+| `Draft` | `draft` | Borrador | Gray | Saved but not submitted |
+| `Pending` | `pending` | Pendiente | Amber | Awaiting manager review |
+| `ApprovedByManager` | `approved_by_manager` | Aprobadas por el Jefe | Info (blue) | Manager approved; awaiting HR |
+| `ApprovedByRRHH` | `approved_by_rrhh` | Aprobadas por RRHH | Info (blue) | HR approved; pending final confirmation |
+| `Approved` | `approved` | Aprobadas | Green | Fully approved |
+| `Rejected` | `rejected` | Rechazadas | Red | Rejected; see rejection comment for reason |
+
+<Warning>
+  Once a request reaches `pending`, `approved`, or `rejected` status, the employee can no longer edit or delete it from the list. Requests in `draft` or `approved_by_manager` state remain editable for the employee who created them.
+</Warning>
+
+## Role-based visibility at a glance
+
+The list table's `modifyQueryUsing` callback in `VacationRequestsTable.php` enforces visibility rules at the query level:
+
+```php
+// Admin: everything except other users' drafts
+if ($user->hasRole('admin')) {
+    return $query->where('status', '!=', RequestStatus::Draft)
+        ->orWhere(fn ($q) => $q->where('employee_id', $employeeId)
+            ->where('status', RequestStatus::Draft));
+}
+
+// Manager: their own requests + department non-drafts
+if ($user->hasRole('manager') && $employee) {
+    return $query->where('employee_id', $employeeId)
+        ->orWhere(fn ($q) => $q->whereHas('employee', fn ($e) =>
+            $e->where('department_id', $departmentId))
+            ->where('status', '!=', RequestStatus::Draft));
+}
+
+// Employee: only their own
+return $query->where('employee_id', $employeeId);
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Request workflow" icon="arrow-right-arrow-left" href="/guides/request-workflow">
+    Learn the complete approval flow and what each role can do at each stage.
+  </Card>
+  <Card title="Email notifications" icon="envelope" href="/guides/email-notifications">
+    See which emails are sent at each status transition and how to configure your mail driver.
+  </Card>
+  <Card title="Vacation balance" icon="scale-balanced" href="/features/vacation-balance">
+    Understand how accrued, used, and pending days are tracked per employee.
+  </Card>
+  <Card title="Deployment" icon="server" href="/deployment">
+    Deploy the application to a server using Docker Compose.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
